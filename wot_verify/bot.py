@@ -22,12 +22,14 @@ class LoginView(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
         button = discord.ui.Button(
-            label=t("login_button"), custom_id="wot:verify:v1", style=discord.ButtonStyle.primary
+            label=self.bot.t("login_button"),
+            custom_id="wot:verify:v1",
+            style=discord.ButtonStyle.primary,
         )
         button.callback = self.login
         self.add_item(button)
         contact = discord.ui.Button(
-            label=t("clan_button"),
+            label=self.bot.t("clan_button"),
             custom_id="wot:clan-contact:v1",
             style=discord.ButtonStyle.secondary,
         )
@@ -37,30 +39,35 @@ class LoginView(discord.ui.View):
     async def clan_contact(self, interaction):
         await interaction.response.defer(ephemeral=True)
         if interaction.guild_id != self.bot.config.guild_id:
-            return await interaction.followup.send(t("wrong_server"), ephemeral=True)
+            return await interaction.followup.send(self.bot.t("wrong_server"), ephemeral=True)
         try:
             async with self.bot.lock:
                 await self.bot.claim_contact(interaction.user.id)
-            message = t("clan_success")
+            message = self.bot.t("clan_success")
         except ValueError as exc:
-            message = t(str(exc))
+            message = self.bot.t(str(exc))
         except DISCORD_IO_ERRORS:
-            message = t("clan_discord_error")
+            message = self.bot.t("clan_discord_error")
         await interaction.followup.send(message, ephemeral=True)
 
     async def login(self, interaction):
         if interaction.guild_id != self.bot.config.guild_id:
-            return await interaction.response.send_message(t("wrong_server"), ephemeral=True)
+            return await interaction.response.send_message(
+                self.bot.t("wrong_server"), ephemeral=True
+            )
         if not self.bot.is_ready():
-            return await interaction.response.send_message(t("not_ready"), ephemeral=True)
+            return await interaction.response.send_message(self.bot.t("not_ready"), ephemeral=True)
         state = self.bot.states.issue(interaction.user.id, interaction.channel_id)
         view = discord.ui.View()
         view.add_item(
             discord.ui.Button(
-                label=t("login_button"), url=f"{self.bot.config.public_url}/login?state={state}"
+                label=self.bot.t("login_button"),
+                url=f"{self.bot.config.public_url}/login?state={state}",
             )
         )
-        await interaction.response.send_message(t("login_prompt"), view=view, ephemeral=True)
+        await interaction.response.send_message(
+            self.bot.t("login_prompt"), view=view, ephemeral=True
+        )
 
 
 class VerifyBot(discord.Client):
@@ -75,6 +82,9 @@ class VerifyBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.runner = None
         self.register_commands()
+
+    def t(self, key):
+        return t(key, getattr(self.config, "locale", "en"))
 
     async def setup_hook(self):
         from aiohttp import web
@@ -316,7 +326,7 @@ class VerifyBot(discord.Client):
                 log.warning("Could not restore role for Discord member %s", member.id)
                 return
             try:
-                await member.send(t("rejoined"))
+                await member.send(self.t("rejoined"))
             except discord.HTTPException:
                 pass
 
@@ -340,14 +350,12 @@ class VerifyBot(discord.Client):
     def register_commands(self):
         async def check(interaction):
             if interaction.guild_id != self.config.guild_id:
-                raise app_commands.CheckFailure(t("wrong_server"))
+                raise app_commands.CheckFailure(self.t("wrong_server"))
             return True
 
         self.tree.interaction_check = check
 
-        @self.tree.command(
-            description="Remove a clan contact role and free the clan slot after review"
-        )
+        @self.tree.command(description=self.t("command_admin_contact_remove"))
         @app_commands.guild_only()
         @app_commands.default_permissions(manage_roles=True)
         @app_commands.checks.has_permissions(manage_roles=True)
@@ -362,19 +370,19 @@ class VerifyBot(discord.Client):
             async with self.lock:
                 cleaned = await self.remove_contact(int(discord_id))
             await interaction.followup.send(
-                t("clan_removed" if cleaned else "clan_tag_cleanup_error"), ephemeral=True
+                self.t("clan_removed" if cleaned else "clan_tag_cleanup_error"), ephemeral=True
             )
 
-        @self.tree.command(description="Post the Wargaming verification panel in this channel")
+        @self.tree.command(description=self.t("command_setup"))
         @app_commands.guild_only()
         @app_commands.default_permissions(administrator=True)
         @app_commands.checks.has_permissions(administrator=True)
         async def setup(interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True)
-            await interaction.channel.send(t("panel"), view=LoginView(self))
-            await interaction.followup.send(t("setup_done"), ephemeral=True)
+            await interaction.channel.send(self.t("panel"), view=LoginView(self))
+            await interaction.followup.send(self.t("setup_done"), ephemeral=True)
 
-        @self.tree.command(description="Refresh your player role and World of Tanks nickname")
+        @self.tree.command(description=self.t("command_resync"))
         @app_commands.guild_only()
         @app_commands.checks.cooldown(1, 60, key=lambda i: i.user.id)
         async def resync(interaction: discord.Interaction):
@@ -384,21 +392,21 @@ class VerifyBot(discord.Client):
                 if row is None:
                     raise ValueError("not_linked")
                 await self.sync(row)
-            await interaction.followup.send(t("synced"), ephemeral=True)
+            await interaction.followup.send(self.t("synced"), ephemeral=True)
 
-        @self.tree.command(description="Remove your account link and player role")
+        @self.tree.command(description=self.t("command_unlink"))
         @app_commands.guild_only()
         async def unlink(interaction: discord.Interaction, confirm: bool = False):
             await interaction.response.defer(ephemeral=True)
             if not confirm:
-                return await interaction.followup.send(t("confirm_unlink"), ephemeral=True)
+                return await interaction.followup.send(self.t("confirm_unlink"), ephemeral=True)
             async with self.lock:
                 cleaned = await self.remove(interaction.user.id)
             await interaction.followup.send(
-                t("unlinked" if cleaned else "unlinked_tag_pending"), ephemeral=True
+                self.t("unlinked" if cleaned else "unlinked_tag_pending"), ephemeral=True
             )
 
-        @self.tree.command(description="Remove a link by Discord user ID or Wargaming account ID")
+        @self.tree.command(description=self.t("command_admin_unlink"))
         @app_commands.guild_only()
         @app_commands.default_permissions(administrator=True)
         @app_commands.checks.has_permissions(administrator=True)
@@ -421,20 +429,20 @@ class VerifyBot(discord.Client):
                     raise ValueError("not_linked")
                 cleaned = await self.remove(row["discord_id"])
             await interaction.followup.send(
-                t("unlinked" if cleaned else "unlinked_tag_pending"), ephemeral=True
+                self.t("unlinked" if cleaned else "unlinked_tag_pending"), ephemeral=True
             )
 
         @self.tree.error
         async def error(interaction, exc):
             original = getattr(exc, "original", exc)
             if isinstance(original, ValueError):
-                message = t(str(original))
+                message = self.t(str(original))
             elif isinstance(original, discord.HTTPException):
-                message = t("discord_error")
+                message = self.t("discord_error")
             elif isinstance(original, app_commands.CheckFailure):
-                message = t("admin_only")
+                message = self.t("admin_only")
             else:
-                message = t("error")
+                message = self.t("error")
             log.warning("Command failed: %s", type(original).__name__)
             if interaction.response.is_done():
                 await interaction.followup.send(message, ephemeral=True)

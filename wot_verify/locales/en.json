@@ -35,9 +35,14 @@
   "clan_disabled": "Clan contacts are not configured yet. Please contact a moderator.",
   "clan_discord_error": "Discord could not update the clan contact role. Please contact a moderator to check bot permissions and role hierarchy, then retry.",
   "clan_nickname_error": "Your clan contact role is assigned and the clan slot is reserved, but Discord could not update your nickname. Ask a moderator to check permissions, then retry this button or /resync.",
-  "clan_name_long": "Your World of Tanks nickname with the clan tag exceeds Discord\u2019s 32-character limit. Please ask a moderator for a manual verification.",
+  "clan_name_long": "Your World of Tanks nickname with the clan tag exceeds Discord’s 32-character limit. Please ask a moderator for a manual verification.",
   "clan_removed": "The clan contact role, reservation and nickname suffix have been removed. Your account link is kept.",
   "clan_player_required": "You must have the player role before becoming a clan contact. Please verify or resync your account first.",
   "clan_tag_cleanup_error": "The clan contact role and reservation are removed, but Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions, then retry /admin_contact_remove.",
-  "unlinked_tag_pending": "Your account link, player role and clan contact role have been removed. Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions and retry /admin_contact_remove."
+  "unlinked_tag_pending": "Your account link, player role and clan contact role have been removed. Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions and retry /admin_contact_remove.",
+  "command_admin_contact_remove": "Remove a clan contact role and free the clan slot after review",
+  "command_setup": "Post the Wargaming verification panel in this channel",
+  "command_resync": "Refresh your player role and World of Tanks nickname",
+  "command_unlink": "Remove your account link and player role",
+  "command_admin_unlink": "Remove a link by Discord user ID or Wargaming account ID"
 }

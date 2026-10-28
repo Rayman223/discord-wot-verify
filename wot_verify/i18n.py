@@ -1,9 +1,16 @@
 import json
 from importlib.resources import files
 
-MESSAGES = json.loads(files("wot_verify").joinpath("locales/en.json").read_text())
+SUPPORTED_LOCALES = ("en", "fr")
+CATALOGS = {
+    locale: json.loads(
+        files("wot_verify").joinpath(f"locales/{locale}.json").read_text(encoding="utf-8")
+    )
+    for locale in SUPPORTED_LOCALES
+}
+MESSAGES = CATALOGS["en"]
 
 
-def t(key):
-    """Single message boundary: add locale catalogs and selection here in future."""
-    return MESSAGES.get(key, MESSAGES["error"])
+def t(key, locale="en"):
+    """Translate a message, falling back to English for missing keys or locales."""
+    return CATALOGS.get(locale, MESSAGES).get(key, MESSAGES.get(key, MESSAGES["error"]))

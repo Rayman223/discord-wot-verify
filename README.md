@@ -1,6 +1,6 @@
 # WoT Verify
 
-Bot Discord indépendant de Battle-Conquest : vérification d'un compte World of Tanks PC EU, attribution du rôle existant **joueur** et synchronisation du pseudo. Interface en anglais, messages centralisés dans `wot_verify/locales/en.json` pour ajouter des langues ultérieurement.
+Bot Discord indépendant de Battle-Conquest : vérification d'un compte World of Tanks PC EU, attribution du rôle existant **joueur** et synchronisation du pseudo. Interface disponible en anglais et en français, configurable avec `LOCALE=en` (par défaut) ou `LOCALE=fr`. Les messages sont centralisés dans `wot_verify/locales/`.
 
 ## Fonctionnement
 
@@ -72,6 +72,12 @@ Un contrôle quotidien actualise les liaisons dont la dernière synchronisation 
 
    Le fichier fourni désactive les logs HTTP sur ce vhost : le callback contient une assertion OpenID et un état temporaire. Ne pas ajouter de journalisation des URL complètes via un proxy, WAF ou service externe en amont. Les logs applicatifs ne contiennent ni tokens ni URL de callback.
 
+### Langue de l’interface
+
+Ajouter `LOCALE=fr` au fichier `.env` pour utiliser le français, ou `LOCALE=en` pour l’anglais (valeur par défaut). La langue s’applique à toute l’instance : messages privés, boutons, descriptions des commandes et pages de retour. Les noms des commandes et leurs paramètres restent identiques, ainsi que les pseudos Wargaming et les tags de clan. Une valeur non prise en charge bloque le démarrage avec une erreur explicite.
+
+Après modification, recréer le conteneur avec `bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh`. Les descriptions des commandes sont synchronisées au démarrage. Supprimer l’ancien panneau Discord et lancer `/setup` pour publier le panneau traduit ; les messages déjà publiés ne sont pas modifiés automatiquement. Tester les boutons, `/resync` et une page de retour de vérification.
+
 ### 3. Démarrer et vérifier
 
 ```bash
@@ -122,7 +128,7 @@ docker compose start wot-verify
 - Le refus de renommage Discord est indépendant de la validité du pseudo WoT. Vérifier les permissions et la hiérarchie, puis `/resync`. Les erreurs transitoires n'arrêtent pas les synchronisations suivantes.
 - Le rôle joueur représente une liaison vérifiée ; retirer uniquement le rôle manuellement ne supprime pas la liaison et le rôle pourra revenir au prochain `/resync`. Utiliser `/admin_unlink` pour révoquer durablement la liaison.
 - L'application n'effectue pas de détection des bannissements WoT ; l'administrateur décide quand libérer une liaison.
-- Pour ajouter une langue, compléter les catalogues et la sélection dans `wot_verify/i18n.py`, ainsi qu'un traducteur `discord.app_commands.Translator` pour les descriptions des commandes. Seul l'anglais est fourni initialement.
+- Pour ajouter une langue, créer son catalogue dans `wot_verify/locales/` et l’ajouter à `SUPPORTED_LOCALES` dans `wot_verify/i18n.py`. Les clés absentes utilisent le texte anglais.
 
 ## Développement et contrôles
 
