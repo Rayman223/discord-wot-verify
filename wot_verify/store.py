@@ -82,8 +82,58 @@ class Store:
 
     def unlink(self, discord_id):
         with self.db:
+            self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM challenges WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM links WHERE discord_id=?", (discord_id,))
+
+    def contact(self, discord_id):
+        return self.db.execute(
+            "SELECT * FROM clan_contacts WHERE discord_id=?", (discord_id,)
+        ).fetchone()
+
+    def clan_contact(self, region, clan_id):
+        return self.db.execute(
+            "SELECT * FROM clan_contacts WHERE region=? AND clan_id=?", (region, clan_id)
+        ).fetchone()
+
+    def reserve_contact(self, discord_id, region, clan_id):
+        try:
+            with self.db:
+                self.db.execute(
+                    "INSERT INTO clan_contacts VALUES (?, ?, ?)", (discord_id, region, clan_id)
+                )
+        except sqlite3.IntegrityError:
+            row = self.contact(discord_id)
+            if not row or (row["region"], row["clan_id"]) != (region, clan_id):
+                raise ValueError("clan_taken") from None
+
+    def release_contact(self, discord_id):
+        with self.db:
+            self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
+
+    def remember_tag(self, discord_id, suffix):
+        with self.db:
+            self.db.execute(
+                "INSERT OR IGNORE INTO clan_tag_state VALUES (?, ?)", (discord_id, suffix)
+            )
+
+    def contact_tags(self, discord_id):
+        return [
+            row[0]
+            for row in self.db.execute(
+                "SELECT suffix FROM clan_tag_state WHERE discord_id=?", (discord_id,)
+            )
+        ]
+
+    def clear_tags(self, discord_id):
+        with self.db:
+            self.db.execute("DELETE FROM clan_tag_state WHERE discord_id=?", (discord_id,))
+
+    def confirm_tag(self, discord_id, suffix):
+        """Only the most recently confirmed Discord nickname remains managed."""
+        with self.db:
+            self.db.execute("DELETE FROM clan_tag_state WHERE discord_id=?", (discord_id,))
+            self.db.execute("INSERT INTO clan_tag_state VALUES (?, ?)", (discord_id, suffix))
 
     def due(self):
         return self.db.execute(

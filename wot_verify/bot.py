@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 import aiohttp
 import discord
@@ -10,9 +11,10 @@ from .i18n import t
 from .openid import OpenID
 from .security import States
 from .store import Store
-from .wargaming import Wargaming
+from .wargaming import CONTACT_RANKS, Wargaming
 
 log = logging.getLogger(__name__)
+DISCORD_IO_ERRORS = (discord.HTTPException, aiohttp.ClientError, OSError)
 
 
 class LoginView(discord.ui.View):
@@ -24,6 +26,27 @@ class LoginView(discord.ui.View):
         )
         button.callback = self.login
         self.add_item(button)
+        contact = discord.ui.Button(
+            label=t("clan_button"),
+            custom_id="wot:clan-contact:v1",
+            style=discord.ButtonStyle.secondary,
+        )
+        contact.callback = self.clan_contact
+        self.add_item(contact)
+
+    async def clan_contact(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if interaction.guild_id != self.bot.config.guild_id:
+            return await interaction.followup.send(t("wrong_server"), ephemeral=True)
+        try:
+            async with self.bot.lock:
+                await self.bot.claim_contact(interaction.user.id)
+            message = t("clan_success")
+        except ValueError as exc:
+            message = t(str(exc))
+        except DISCORD_IO_ERRORS:
+            message = t("clan_discord_error")
+        await interaction.followup.send(message, ephemeral=True)
 
     async def login(self, interaction):
         if interaction.guild_id != self.bot.config.guild_id:
@@ -100,15 +123,171 @@ class VerifyBot(discord.Client):
     async def sync(self, row):
         member = await self.member(row["discord_id"])
         nickname = await self.wg.nickname(row["account_id"])
+        suffix = ""
+        is_contact = self.store.contact(row["discord_id"]) and any(
+            role.id == getattr(self.config, "clan_role_id", 0) for role in member.roles
+        )
+        if is_contact:
+            base_nickname = nickname
+            nickname = await self.contact_nickname(row, nickname)
+            suffix = nickname[len(base_nickname) :]
+            self.store.remember_tag(member.id, suffix)
         await member.add_roles(self.role(member), reason="Wargaming account verification")
         try:
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
         except discord.Forbidden:
             raise ValueError("nickname_blocked") from None
-        except discord.HTTPException:
+        except DISCORD_IO_ERRORS:
             raise ValueError("nickname_error") from None
+        if is_contact:
+            self.store.confirm_tag(member.id, suffix)
+        else:
+            self.store.clear_tags(member.id)
         self.store.mark_synced(member.id, nickname)
+
+    def contact_role(self, member):
+        role_id = getattr(self.config, "clan_role_id", 0)
+        if not role_id:
+            raise ValueError("clan_disabled")
+        role = member.guild.get_role(role_id)
+        if (
+            role is None
+            or role.is_default()
+            or role.managed
+            or role.permissions.administrator
+            or role.id == self.config.role_id
+        ):
+            raise ValueError("clan_discord_error")
+        return role
+
+    async def contact_nickname(self, row, nickname):
+        membership = await self.wg.clan_membership(row["account_id"])
+        contact = self.store.contact(row["discord_id"])
+        if (
+            membership is None
+            or membership[1] not in CONTACT_RANKS
+            or (
+                contact
+                and (contact["region"], contact["clan_id"]) != (row["region"], membership[0])
+            )
+        ):
+            raise ValueError("clan_review")
+        result = f"{nickname} [{membership[2]}]"
+        if len(result) > 32:
+            raise ValueError("clan_name_long")
+        return result
+
+    async def claim_contact(self, discord_id):
+        # Caller holds the shared lock across lookup, reservation and Discord updates.
+        if not self.is_ready():
+            raise ValueError("not_ready")
+        if not getattr(self.config, "clan_role_id", 0):
+            raise ValueError("clan_disabled")
+        row = self.store.get(discord_id)
+        if row is None:
+            raise ValueError("clan_not_linked")
+        membership = await self.wg.clan_membership(row["account_id"])
+        if membership is None or membership[1] not in CONTACT_RANKS:
+            raise ValueError("clan_ineligible")
+        current = self.store.contact(discord_id)
+        if current and (current["region"], current["clan_id"]) != (row["region"], membership[0]):
+            raise ValueError("clan_review")
+        nickname = await self.wg.nickname(row["account_id"])
+        nickname = f"{nickname} [{membership[2]}]"
+        if len(nickname) > 32:
+            raise ValueError("clan_name_long")
+        member = await self.member(discord_id)
+        if not any(role.id == self.config.role_id for role in member.roles):
+            raise ValueError("clan_player_required")
+        role = self.contact_role(member)
+        self.store.reserve_contact(discord_id, row["region"], membership[0])
+        try:
+            await member.add_roles(role, reason="Verified clan contact")
+        except discord.Forbidden:
+            if current is None:
+                self.store.release_contact(discord_id)
+            raise
+        # On timeout/unknown Discord result, keep the reservation to prevent duplicates.
+        self.store.remember_tag(discord_id, f" [{membership[2]}]")
+        try:
+            if member.nick != nickname:
+                await member.edit(nick=nickname, reason="Clan contact nickname")
+        except DISCORD_IO_ERRORS:
+            raise ValueError("clan_nickname_error") from None
+        self.store.confirm_tag(discord_id, f" [{membership[2]}]")
+
+    async def remove_contact(self, discord_id, member=None, *, was_contact=False):
+        contact = self.store.contact(discord_id)
+        if (
+            not getattr(self.config, "clan_role_id", 0)
+            and not contact
+            and not self.store.contact_tags(discord_id)
+        ):
+            return True
+        if member is None:
+            try:
+                member = await self.member(discord_id)
+            except discord.NotFound:
+                member = None
+        if member:
+            role_id = getattr(self.config, "clan_role_id", 0)
+            has_role = any(role.id == role_id for role in member.roles)
+            # Support contacts created before tag tracking, but never infer a tag
+            # from the nickname of someone who is not a contact.
+            if (
+                (has_role or (was_contact and contact is not None))
+                and not self.store.contact_tags(discord_id)
+                and member.nick
+            ):
+                suffix = re.search(r" \[[A-Za-z0-9_-]{2,5}\]$", member.nick)
+                if suffix:
+                    self.store.remember_tag(discord_id, suffix[0])
+            if has_role:
+                await member.remove_roles(self.contact_role(member), reason="Clan contact removed")
+        self.store.release_contact(discord_id)
+        if member and member.nick:
+            for suffix in self.store.contact_tags(discord_id):
+                if member.nick.endswith(suffix):
+                    try:
+                        await member.edit(
+                            nick=member.nick[: -len(suffix)] or None,
+                            reason="Clan contact tag removed",
+                        )
+                    except DISCORD_IO_ERRORS:
+                        log.warning("Clan tag cleanup pending for Discord member %s", discord_id)
+                        return False
+                    break
+        self.store.clear_tags(discord_id)
+        return True
+
+    async def on_member_update(self, before, after):
+        if after.guild.id != self.config.guild_id:
+            return
+        role_id = getattr(self.config, "clan_role_id", 0)
+        if not role_id:
+            return
+        old = {role.id for role in before.roles}
+        new = {role.id for role in after.roles}
+        player_removed = self.config.role_id in old - new
+        contact_removed = role_id in old - new
+        if not player_removed and not contact_removed:
+            return
+        async with self.lock:
+            try:
+                # Gateway events may be queued: never act on a stale member snapshot.
+                member = await self.member(after.id)
+                roles = {role.id for role in member.roles}
+                if (
+                    player_removed
+                    and self.config.role_id not in roles
+                    and (role_id in old or self.store.contact(after.id))
+                ) or (contact_removed and role_id not in roles):
+                    await self.remove_contact(after.id, member, was_contact=role_id in old)
+            except discord.NotFound:
+                self.store.release_contact(after.id)
+            except (*DISCORD_IO_ERRORS, ValueError):
+                log.warning("Clan contact cleanup failed for Discord member %s", after.id)
 
     async def remove(self, discord_id):
         # Keep the link on permission/network failures so an administrator can retry.
@@ -116,9 +295,14 @@ class VerifyBot(discord.Client):
             member = await self.member(discord_id)
         except discord.NotFound:
             member = None
+        cleaned = True
         if member:
+            cleaned = await self.remove_contact(discord_id, member)
             await member.remove_roles(self.role(member), reason="Wargaming account unlinked")
+        else:
+            self.store.clear_tags(discord_id)
         self.store.unlink(discord_id)
+        return cleaned
 
     async def on_member_join(self, member):
         if member.guild.id != self.config.guild_id:
@@ -161,6 +345,26 @@ class VerifyBot(discord.Client):
 
         self.tree.interaction_check = check
 
+        @self.tree.command(
+            description="Remove a clan contact role and free the clan slot after review"
+        )
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_roles=True)
+        @app_commands.checks.has_permissions(manage_roles=True)
+        async def admin_contact_remove(interaction: discord.Interaction, discord_id: str):
+            await interaction.response.defer(ephemeral=True)
+            if (
+                not discord_id.isascii()
+                or not discord_id.isdigit()
+                or not 0 < int(discord_id) < 2**63
+            ):
+                raise ValueError("bad_target")
+            async with self.lock:
+                cleaned = await self.remove_contact(int(discord_id))
+            await interaction.followup.send(
+                t("clan_removed" if cleaned else "clan_tag_cleanup_error"), ephemeral=True
+            )
+
         @self.tree.command(description="Post the Wargaming verification panel in this channel")
         @app_commands.guild_only()
         @app_commands.default_permissions(administrator=True)
@@ -189,8 +393,10 @@ class VerifyBot(discord.Client):
             if not confirm:
                 return await interaction.followup.send(t("confirm_unlink"), ephemeral=True)
             async with self.lock:
-                await self.remove(interaction.user.id)
-            await interaction.followup.send(t("unlinked"), ephemeral=True)
+                cleaned = await self.remove(interaction.user.id)
+            await interaction.followup.send(
+                t("unlinked" if cleaned else "unlinked_tag_pending"), ephemeral=True
+            )
 
         @self.tree.command(description="Remove a link by Discord user ID or Wargaming account ID")
         @app_commands.guild_only()
@@ -213,8 +419,10 @@ class VerifyBot(discord.Client):
                 )
                 if row is None:
                     raise ValueError("not_linked")
-                await self.remove(row["discord_id"])
-            await interaction.followup.send(t("unlinked"), ephemeral=True)
+                cleaned = await self.remove(row["discord_id"])
+            await interaction.followup.send(
+                t("unlinked" if cleaned else "unlinked_tag_pending"), ephemeral=True
+            )
 
         @self.tree.error
         async def error(interaction, exc):

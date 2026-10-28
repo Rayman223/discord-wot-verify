@@ -29,6 +29,7 @@ def test_persistent_view_and_commands(bot):
         "resync",
         "unlink",
         "admin_unlink",
+        "admin_contact_remove",
     }
 
 
