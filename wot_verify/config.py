@@ -14,6 +14,7 @@ class Config:
     region: str = "eu"
     database: str = "/data/verify.sqlite3"
     port: int = 8080
+    clan_role_id: int = 0
 
     @classmethod
     def load(cls):
@@ -27,6 +28,7 @@ class Config:
             region=os.getenv("WG_REGION", "eu"),
             database=os.getenv("DATABASE_PATH", "/data/verify.sqlite3"),
             port=int(os.getenv("PORT", "8080")),
+            clan_role_id=int(os.getenv("CLAN_CONTACT_ROLE_ID", "0")),
         )
         url = urlsplit(config.public_url)
         if (
@@ -44,4 +46,8 @@ class Config:
             raise ValueError("WG_REGION must be eu, com or asia")
         if min(config.guild_id, config.role_id) <= 0:
             raise ValueError("Discord IDs must be positive")
+        if config.clan_role_id < 0 or config.clan_role_id in {config.role_id, config.guild_id}:
+            raise ValueError(
+                "CLAN_CONTACT_ROLE_ID must be a separate positive role ID, or 0 to disable"
+            )
         return config
