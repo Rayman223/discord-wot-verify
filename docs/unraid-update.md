@@ -30,6 +30,21 @@ bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh
 
 Le bouton Discord existant reste utilisable ; il n'est pas nécessaire de relancer `/setup`. Une courte interruption intervient entre l'arrêt de l'ancien bot et la connexion du nouveau.
 
+## Déclenchement avec Unraid User Scripts
+
+Créer une entrée **Mettre à jour WoT Verify** dans User Scripts et y coller uniquement ce lanceur :
+
+```bash
+#!/bin/bash
+exec /bin/bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh
+```
+
+Le chemin absolu permet de lancer la mise à jour quel que soit le répertoire courant choisi par User Scripts. Aucun `cd` préalable n'est nécessaire : le script détermine lui-même le dossier du projet à partir de son propre emplacement. Ne pas copier tout le script de mise à jour dans User Scripts : ce petit lanceur continuera à utiliser la version conservée dans le dépôt.
+
+Exécuter cette entrée après les fusions souhaitées et consulter sa sortie dans User Scripts. `exec` transmet le code de sortie du script : zéro si la mise à jour réussit, une valeur non nulle si elle échoue, même après restauration. Une exécution en arrière-plan convient également ; il ne faut pas ajouter `&` dans le lanceur. Le verrou existant protège contre deux exécutions simultanées.
+
+La première récupération du dépôt décrite plus haut reste nécessaire pour que le fichier existe localement. Les lancements suivants effectuent eux-mêmes le `git pull`. Le script ne crée aucune planification ; si une fréquence est configurée dans User Scripts, chaque lancement construit et remplace le conteneur, même sans nouveau commit.
+
 ## Si la mise à jour échoue
 
 Après le début du remplacement, une erreur ou un contrôle de santé négatif déclenche une tentative de retour à l'ancien conteneur. Le script retire le nouveau, conserve les données de la tentative dans le sous-répertoire `failed-data` de la sauvegarde, restaure l'archive SQLite d'avant mise à jour et redémarre l'ancien conteneur. La restauration des données est nécessaire si le nouveau code a déjà appliqué des migrations.
@@ -60,4 +75,4 @@ HEALTH_TIMEOUT=120 \
 bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh
 ```
 
-`PROJECT_DIR` désigne le dépôt, avec `.env` et `data`. Par défaut, il est déterminé à partir de l'emplacement du script. `DOCKER_NETWORK` choisit le réseau partagé avec SWAG ; il n'est pas lu depuis `SWAG_NETWORK` dans `.env`, qui reste une variable pour Compose. Si le nom du conteneur change, adapter également la cible du reverse proxy SWAG. Exécuter le script manuellement pour pouvoir examiner son résultat ; aucune tâche planifiée n'est installée.
+`PROJECT_DIR` désigne le dépôt, avec `.env` et `data`. Par défaut, il est déterminé à partir de l'emplacement du script. `DOCKER_NETWORK` choisit le réseau partagé avec SWAG ; il n'est pas lu depuis `SWAG_NETWORK` dans `.env`, qui reste une variable pour Compose. Si le nom du conteneur change, adapter également la cible du reverse proxy SWAG. Ces variables peuvent aussi être exportées dans le lanceur User Scripts, avant la ligne `exec`.
