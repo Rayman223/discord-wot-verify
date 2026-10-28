@@ -8,3 +8,5 @@ data/
 *.sqlite*
 build/
 dist/
+.unraid-update.lock
+.deploy-backups/
