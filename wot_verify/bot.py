@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 import aiohttp
 import discord
@@ -185,6 +186,8 @@ class VerifyBot(discord.Client):
         if len(nickname) > 32:
             raise ValueError("clan_name_long")
         member = await self.member(discord_id)
+        if not any(role.id == self.config.role_id for role in member.roles):
+            raise ValueError("clan_player_required")
         role = self.contact_role(member)
         self.store.reserve_contact(discord_id, row["region"], membership[0])
         try:
@@ -201,7 +204,7 @@ class VerifyBot(discord.Client):
             raise ValueError("clan_nickname_error") from None
 
     async def remove_contact(self, discord_id, member=None):
-        if not self.store.contact(discord_id):
+        if not getattr(self.config, "clan_role_id", 0) and not self.store.contact(discord_id):
             return
         if member is None:
             try:
@@ -209,8 +212,45 @@ class VerifyBot(discord.Client):
             except discord.NotFound:
                 member = None
         if member:
-            await member.remove_roles(self.contact_role(member), reason="Clan contact removed")
+            role_id = getattr(self.config, "clan_role_id", 0)
+            if any(role.id == role_id for role in member.roles):
+                await member.remove_roles(self.contact_role(member), reason="Clan contact removed")
         self.store.release_contact(discord_id)
+        if member and member.nick:
+            nickname = re.sub(r" \[[A-Za-z0-9_-]{2,5}\]$", "", member.nick)
+            if nickname != member.nick:
+                try:
+                    await member.edit(nick=nickname or None, reason="Clan contact tag removed")
+                except discord.HTTPException:
+                    raise ValueError("clan_tag_cleanup_error") from None
+
+    async def on_member_update(self, before, after):
+        if after.guild.id != self.config.guild_id:
+            return
+        role_id = getattr(self.config, "clan_role_id", 0)
+        if not role_id:
+            return
+        old = {role.id for role in before.roles}
+        new = {role.id for role in after.roles}
+        player_removed = self.config.role_id in old - new
+        contact_removed = role_id in old - new
+        if not player_removed and not contact_removed:
+            return
+        async with self.lock:
+            try:
+                # Gateway events may be queued: never act on a stale member snapshot.
+                member = await self.member(after.id)
+                roles = {role.id for role in member.roles}
+                if (
+                    player_removed
+                    and self.config.role_id not in roles
+                    and (role_id in old or self.store.contact(after.id))
+                ) or (contact_removed and role_id not in roles):
+                    await self.remove_contact(after.id, member)
+            except discord.NotFound:
+                self.store.release_contact(after.id)
+            except (discord.HTTPException, ValueError):
+                log.warning("Clan contact cleanup failed for Discord member %s", after.id)
 
     async def remove(self, discord_id):
         # Keep the link on permission/network failures so an administrator can retry.

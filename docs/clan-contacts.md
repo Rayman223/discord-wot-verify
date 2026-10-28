@@ -1,6 +1,6 @@
 # Contacts de clan
 
-Le panneau `/setup` comporte un second bouton **Become a clan contact**. Le membre doit avoir lié son compte via Wargaming OpenID. Le bot interroge `clans/accountinfo` sur la région configurée et accepte exactement les grades `commander`, `executive_officer` et `recruitment_officer`. Les grades sont vérifiés côté serveur à chaque demande, sans faire confiance à une information Discord ou à un paramètre fourni par le joueur.
+Le panneau `/setup` comporte un second bouton **Become a clan contact**. Le membre doit avoir lié son compte via Wargaming OpenID et posséder le rôle joueur. Le bot interroge `clans/accountinfo` sur la région configurée et accepte exactement les grades `commander`, `executive_officer` et `recruitment_officer`. Les grades sont vérifiés côté serveur à chaque demande, sans faire confiance à une information Discord ou à un paramètre fourni par le joueur.
 
 Une contrainte SQLite garantit un seul contact par couple région/clan, et un seul clan par contact. Si la place appartient déjà à un autre membre, le bouton répond en privé : **This clan already has a contact. Please ask a moderator for a manual verification.** Aucun remplacement ni message automatique à un modérateur n'est effectué.
 
@@ -36,10 +36,16 @@ Un modérateur disposant de **Manage Roles** peut utiliser :
 /admin_contact_remove discord_id:IDENTIFIANT_DISCORD
 ```
 
-La commande vérifie les permissions à l'exécution, retire le rôle contact puis libère la place. Le pseudo actuel et la liaison Wargaming sont conservés. Si le membre est parti ou banni, sa place peut aussi être libérée. En cas de refus du retrait par Discord, la réservation est conservée pour réessayer. Une nouvelle personne peut ensuite cliquer sur le bouton pour faire vérifier son propre compte.
+La commande vérifie les permissions à l'exécution, retire le rôle contact puis libère la place. Le suffixe final `[TAG]` est retiré du pseudo ; la liaison Wargaming et le reste du pseudo sont conservés. Si le membre est parti ou banni, sa place peut aussi être libérée. En cas de refus du retrait par Discord, la réservation est conservée pour réessayer. Une nouvelle personne peut ensuite cliquer sur le bouton pour faire vérifier son propre compte.
 
-`/unlink` et `/admin_unlink` retirent également le rôle contact avant de supprimer la liaison. Un échec de retrait conserve la liaison et la réservation. Ces retraits explicites font partie de la suppression demandée par l'utilisateur ou l'administrateur.
+`/unlink` et `/admin_unlink` retirent également le rôle contact avant de supprimer la liaison. Un refus du retrait du rôle conserve la liaison et la réservation. Si seul le nettoyage du pseudo échoue, la place reste libérée et une nouvelle exécution de /admin_contact_remove permet de réessayer sans réservation. Ces retraits explicites font partie de la suppression demandée par l'utilisateur ou l'administrateur.
 
 La révocation automatique après départ du serveur ou changement de clan/grade n'est pas activée : cette règle reste à décider. Si un contact change de clan ou de grade, une tentative de bouton ou de synchronisation demande une vérification manuelle sans transférer la place ni supprimer automatiquement le rôle. Après un départ, la réservation reste occupée jusqu'au retrait manuel ; elle n'attribue pas automatiquement le rôle contact au retour du membre. Les attributions de rôles faites manuellement en dehors du bot ne créent aucune réservation en base et doivent être contrôlées par les modérateurs.
 
 Recette suivie dans [l'issue #5](https://github.com/Rayman223/discord-wot-verify/issues/5). Les tests automatiques utilisent des bases temporaires et des doubles Discord/WG ; la recette réelle nécessite l'ID du rôle et des comptes de clan.
+
+## Retraits manuels dans Discord
+
+Le bot observe les changements de rôles : retirer joueur retire aussi contact de clan et libère sa réservation. Retirer contact de clan libère la place et enlève le suffixe final `[TAG]`. Les autres parties du pseudo sont conservées et aucun appel WG n’est nécessaire. Les événements sont sérialisés avec les commandes ; le membre est relu pour ignorer un ancien événement si son rôle a été réattribué entre-temps.
+
+Discord peut empêcher le retrait ou le renommage selon les permissions et la hiérarchie. Le bot journalise alors un échec sans arrêter le service ; corriger les permissions puis réessayer /admin_contact_remove. Le retrait manuel du rôle joueur ne supprime pas la liaison WG : /resync ou une synchronisation ultérieure peut réattribuer joueur, mais ne réattribue pas automatiquement contact de clan.

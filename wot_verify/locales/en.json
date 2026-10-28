@@ -4,7 +4,7 @@
   "login_prompt": "Use this private link within 10 minutes. Only connect your own account.",
   "success": "Account verified. You can return to Discord.",
   "synced": "Your player role and World of Tanks nickname are up to date.",
-  "unlinked": "Your account link, player role and any clan contact role have been removed. Your current nickname has been kept.",
+  "unlinked": "Your account link, player role and any clan contact role have been removed. Any clan contact nickname suffix has been removed.",
   "not_linked": "No matching account link was found.",
   "already_linked": "This Discord or Wargaming account is already linked. Use /unlink first, or contact an administrator.",
   "invalid_state": "This verification link is invalid, expired or already used. Request a new link in Discord.",
@@ -36,5 +36,7 @@
   "clan_discord_error": "Discord could not update the clan contact role. Please contact a moderator to check bot permissions and role hierarchy, then retry.",
   "clan_nickname_error": "Your clan contact role is assigned and the clan slot is reserved, but Discord could not update your nickname. Ask a moderator to check permissions, then retry this button or /resync.",
   "clan_name_long": "Your World of Tanks nickname with the clan tag exceeds Discord\u2019s 32-character limit. Please ask a moderator for a manual verification.",
-  "clan_removed": "The clan contact role and reservation have been removed. The account link and current nickname are kept."
+  "clan_removed": "The clan contact role, reservation and nickname suffix have been removed. Your account link is kept.",
+  "clan_player_required": "You must have the player role before becoming a clan contact. Please verify or resync your account first.",
+  "clan_tag_cleanup_error": "The clan contact role and reservation are removed, but Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions, then retry /admin_contact_remove."
 }

@@ -30,12 +30,19 @@ def bot(tmp_path):
     member = SimpleNamespace(
         id=10,
         nick="Old",
+        roles=[SimpleNamespace(id=2)],
         guild=SimpleNamespace(get_role=lambda _: role),
         add_roles=AsyncMock(),
         remove_roles=AsyncMock(),
         edit=AsyncMock(),
     )
     client.member = AsyncMock(return_value=member)
+
+    async def added_role(role, **kwargs):
+        if hasattr(role, "id") and not any(r.id == role.id for r in member.roles):
+            member.roles.append(role)
+
+    member.add_roles.side_effect = added_role
     client.wg = SimpleNamespace(
         clan_membership=AsyncMock(return_value=(42, "commander", "TAG")),
         nickname=AsyncMock(return_value="Player"),
@@ -158,6 +165,61 @@ async def test_unlink_removes_contact_role_and_reservation(bot):
     assert member.remove_roles.await_count == 2
     assert client.store.contact(10) is None
     assert client.store.get(10) is None
+
+
+@pytest.mark.parametrize("removed", ["player", "contact"])
+async def test_manual_role_removal_cleans_reservation_and_tag(bot, removed):
+    client, member = bot
+    await client.claim_contact(10)
+    member.nick = "Player [TAG]"
+    member.roles = [SimpleNamespace(id=2)] if removed == "contact" else [SimpleNamespace(id=3)]
+    before = SimpleNamespace(roles=[SimpleNamespace(id=2), SimpleNamespace(id=3)])
+    after = SimpleNamespace(id=10, guild=SimpleNamespace(id=1), roles=member.roles)
+    await client.on_member_update(before, after)
+    assert client.store.contact(10) is None
+    assert member.edit.await_args.kwargs["nick"] == "Player"
+    assert client.store.get(10) is not None
+
+
+async def test_missing_player_role_blocks_contact_claim(bot):
+    client, member = bot
+    member.roles = []
+    with pytest.raises(ValueError, match="clan_player_required"):
+        await client.claim_contact(10)
+    assert client.store.contact(10) is None
+    member.add_roles.assert_not_awaited()
+
+
+async def test_stale_event_does_not_remove_reassigned_role(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.roles = [SimpleNamespace(id=2), SimpleNamespace(id=3)]
+    await client.on_member_update(
+        SimpleNamespace(roles=member.roles),
+        SimpleNamespace(id=10, guild=SimpleNamespace(id=1), roles=[SimpleNamespace(id=2)]),
+    )
+    assert client.store.contact(10)
+    member.remove_roles.assert_not_awaited()
+
+
+async def test_tag_cleanup_can_be_retried_after_role_is_gone(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.nick = "Player [TAG]"
+    member.edit.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "")
+    with pytest.raises(ValueError, match="clan_tag_cleanup_error"):
+        await client.remove_contact(10)
+    assert client.store.contact(10) is None
+    member.edit.side_effect = None
+    await client.remove_contact(10)
+    assert member.edit.await_args.kwargs["nick"] == "Player"
+
+
+async def test_nickname_without_suffix_is_preserved(bot):
+    client, member = bot
+    member.nick = "[TAG] Custom name"
+    await client.remove_contact(10)
+    member.edit.assert_not_awaited()
 
 
 def test_unique_contact_survives_restart_and_can_be_released(tmp_path):
