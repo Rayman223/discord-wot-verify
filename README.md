@@ -8,6 +8,8 @@ Un administrateur poste le panneau avec `/setup` dans **#verification**. Le bout
 
 Les liaisons sont uniques dans les deux sens et persistées en SQLite. Une nouvelle liaison nécessite `/unlink` puis une vérification. Aucun token Wargaming n'est conservé. Le rôle peut être attribué même si Discord refuse ensuite le renommage ; la liaison est conservée et `/resync` permet de réessayer après correction des permissions.
 
+Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouton d'origine. Le salon est inclus dans l'état signé ; aucun token WG n'est transmis à Discord. Les anciens liens encore valides reviennent au serveur. En cas de renommage interdit, la page confirme la liaison et le rôle attribué, puis explique que le membre peut conserver son pseudo sans modifier la hiérarchie du serveur.
+
 | Commande | Accès | Effet |
 | --- | --- | --- |
 | `/setup` | Administrateur | Poste le panneau dans le salon courant. |
@@ -77,6 +79,28 @@ curl --fail https://discord-auth.battle-conquest.eu/healthz
 ```
 
 Le contrôle HTTP doit répondre `{"ready": true}` une fois Discord connecté. `/setup` crée le message du bouton. Tester avec un membre ordinaire situé sous le bot : vérification, rôle joueur, pseudo exact, `/resync`, `/unlink`, nouvelle liaison. Redémarrer le conteneur et vérifier que le bouton initial et les liaisons fonctionnent toujours. La [recette complète est dans l'issue #1](https://github.com/Rayman223/discord-wot-verify/issues/1).
+
+#### Sans Docker Compose
+
+Après préparation du `.env`, du répertoire `data` et de SWAG, utiliser directement Docker sur Unraid :
+
+```bash
+cd /mnt/user/appdata/discord-wot-verify
+docker build -t discord-wot-verify:local .
+docker run -d \
+  --name wot-verify \
+  --restart unless-stopped \
+  --network swagproxy \
+  --env-file /mnt/user/appdata/discord-wot-verify/.env \
+  --mount type=bind,src=/mnt/user/appdata/discord-wot-verify/data,dst=/data \
+  --read-only --tmpfs /tmp --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  discord-wot-verify:local
+docker logs --tail=50 wot-verify
+curl --fail https://discord-auth.battle-conquest.eu/healthz
+```
+
+Adapter `swagproxy` si le réseau partagé avec SWAG porte un autre nom. Pour une mise à jour après fusion : `git pull --ff-only`, reconstruire l'image avec la commande ci-dessus, puis `docker stop wot-verify` et `docker rm wot-verify` avant de répéter `docker run`. Ne pas supprimer le répertoire `data` : le montage conserve les liaisons lors du remplacement du conteneur. Nginx et les variables d'environnement existantes ne nécessitent aucune modification pour le bouton de retour.
 
 Les migrations SQL versionnées dans `wot_verify/migrations/` s'appliquent automatiquement au démarrage et sont suivies dans la table `migrations`. Elles sont idempotentes ; aucun accès à une base Battle-Conquest n'est nécessaire. SQLite exige un stockage local avec verrouillage fiable : éviter un montage SMB/NFS pour `data`.
 

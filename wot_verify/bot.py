@@ -29,7 +29,7 @@ class LoginView(discord.ui.View):
             return await interaction.response.send_message(t("wrong_server"), ephemeral=True)
         if not self.bot.is_ready():
             return await interaction.response.send_message(t("not_ready"), ephemeral=True)
-        state = self.bot.states.issue(interaction.user.id)
+        state = self.bot.states.issue(interaction.user.id, interaction.channel_id)
         view = discord.ui.View()
         view.add_item(
             discord.ui.Button(
@@ -99,7 +99,13 @@ class VerifyBot(discord.Client):
         member = await self.member(row["discord_id"])
         nickname = await self.wg.nickname(row["account_id"])
         await member.add_roles(self.role(member), reason="Wargaming account verification")
-        await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
+        try:
+            if member.nick != nickname:
+                await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
+        except discord.Forbidden:
+            raise ValueError("nickname_blocked") from None
+        except discord.HTTPException:
+            raise ValueError("nickname_error") from None
         self.store.mark_synced(member.id, nickname)
 
     async def remove(self, discord_id):

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 from html import escape
+from importlib.resources import files
 
 import discord
 from aiohttp import web
@@ -11,13 +12,27 @@ from .i18n import t
 log = logging.getLogger(__name__)
 
 
-def page(key, status=200):
+def page(key, status=200, *, guild_id, channel_id=0):
+    destination = f"https://discord.com/channels/{int(guild_id)}"
+    if channel_id:
+        destination += f"/{int(channel_id)}"
+    title_key = (
+        "page_success"
+        if key == "success"
+        else "page_partial"
+        if key in {"linked_incomplete", "nickname_blocked", "nickname_error"}
+        else "page_error"
+    )
     return web.Response(
         text=(
-            "<!doctype html><html lang='en'><meta charset='utf-8'>"
+            "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width'>"
-            f"<title>WoT Verify</title><main><h1>WoT Verify</h1><p>{escape(t(key))}"
-            "</p></main></html>"
+            f"<title>{escape(t(title_key))} · WoT Verify</title>"
+            "<link rel='stylesheet' href='/assets/return.css'></head><body>"
+            f"<main><div class='brand'>WoT Verify</div><h1>{escape(t(title_key))}</h1>"
+            f"<p>{escape(t(key))}</p><a class='button' href='{destination}' rel='noreferrer'>"
+            f"{escape(t('return_discord'))}</a><p class='hint'>{escape(t('return_hint'))}</p>"
+            "</main></body></html>"
         ),
         content_type="text/html",
         status=status,
@@ -35,7 +50,9 @@ def application(bot):
             {
                 "Cache-Control": "no-store",
                 "Referrer-Policy": "no-referrer",
-                "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+                "Content-Security-Policy": (
+                    "default-src 'none'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+                ),
                 "X-Content-Type-Options": "nosniff",
             }
         )
@@ -43,19 +60,18 @@ def application(bot):
 
     app = web.Application(middlewares=[headers], client_max_size=4096)
 
+    def render(key, status=200, channel_id=0):
+        return page(key, status, guild_id=bot.config.guild_id, channel_id=channel_id)
+
     async def login(request):
         if not bot.is_ready():
-            return page("not_ready", 503)
+            return render("not_ready", 503)
         state = request.query.get("state", "")
         # Validate the MAC before issuing redirects; consumption happens only at callback.
         try:
-            payload, signature = state.rsplit(".", 1)
-            if len(state) > 256 or not hmac.compare_digest(
-                signature, bot.states.signature(payload)
-            ):
-                raise ValueError
+            bot.states.inspect(state)
         except ValueError:
-            return page("invalid_state", 400)
+            return render("invalid_state", 400)
         from urllib.parse import urlencode
 
         callback_url = f"{bot.config.public_url}/callback?{urlencode({'state': state})}"
@@ -73,16 +89,17 @@ def application(bot):
 
     async def callback(request):
         if not bot.is_ready():
-            return page("not_ready", 503)
+            return render("not_ready", 503)
         state = request.query.get("state", "")
         cookie = request.cookies.get("wot_verification", "")
         if len(state) > 256 or not hmac.compare_digest(
             cookie, hashlib.sha256(state.encode()).hexdigest()
         ):
-            return page("invalid_state", 400)
+            return render("invalid_state", 400)
+        channel_id = 0
         try:
             async with bot.lock:
-                discord_id = bot.states.consume(state)
+                discord_id, channel_id = bot.states.consume_details(state)
                 token = request.query.get("access_token", "")
                 if request.query.get("status") != "ok" or not token or len(token) > 2048:
                     raise ValueError("wg_error")
@@ -92,22 +109,33 @@ def application(bot):
                 bot.store.link(discord_id, bot.config.region, account_id, nickname)
                 try:
                     await bot.sync(bot.store.get(discord_id))
-                except (discord.HTTPException, ValueError):
+                except (discord.HTTPException, ValueError) as exc:
                     log.warning("Discord verification update failed for member %s", discord_id)
-                    return page("discord_error", 409)
-            response = page("success")
+                    key = str(exc) if isinstance(exc, ValueError) else "linked_incomplete"
+                    if key not in {"nickname_blocked", "nickname_error"}:
+                        key = "linked_incomplete"
+                    response = render(key, 409, channel_id)
+                else:
+                    response = render("success", channel_id=channel_id)
         except ValueError as exc:
-            response = page(str(exc), 400)
+            response = render(str(exc), 400, channel_id)
         except discord.HTTPException:
             log.warning("Discord member lookup failed during verification")
-            response = page("discord_error", 409)
+            response = render("discord_error", 409, channel_id)
         response.del_cookie("wot_verification", path="/callback")
         return response
 
     async def health(request):
         return web.json_response({"ready": bot.is_ready()}, status=200 if bot.is_ready() else 503)
 
+    async def stylesheet(request):
+        return web.Response(
+            text=files("wot_verify").joinpath("static/return.css").read_text(),
+            content_type="text/css",
+        )
+
     app.router.add_get("/login", login)
     app.router.add_get("/callback", callback)
     app.router.add_get("/healthz", health)
+    app.router.add_get("/assets/return.css", stylesheet)
     return app

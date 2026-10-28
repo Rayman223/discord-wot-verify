@@ -12,7 +12,7 @@ dependencies = ["discord.py>=2.6,<3", "aiohttp>=3.12,<4"]
 dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.14,<1"]
 
 [tool.setuptools.package-data]
-wot_verify = ["locales/*.json", "migrations/*.sql"]
+wot_verify = ["locales/*.json", "migrations/*.sql", "static/*.css"]
 
 [tool.setuptools.packages.find]
 include = ["wot_verify*"]
