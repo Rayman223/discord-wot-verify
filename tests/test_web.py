@@ -22,7 +22,8 @@ async def env(tmp_path):
         is_ready=lambda: True,
         lock=asyncio.Lock(),
         member=AsyncMock(),
-        wg=SimpleNamespace(verify=AsyncMock(return_value=(10, "RealName"))),
+        wg=SimpleNamespace(nickname=AsyncMock(return_value="RealName")),
+        openid=SimpleNamespace(verify=AsyncMock(return_value=10)),
         sync=AsyncMock(),
     )
     async with TestClient(TestServer(application(bot))) as client:
@@ -49,12 +50,12 @@ async def test_callback_uses_verified_identity_and_rejects_replay(env):
     assert response.headers["Cache-Control"] == "no-store"
     assert "secret" not in await response.text()
     assert (await invoke(bot, client, token)).status == 400
-    assert bot.wg.verify.await_count == 1
+    assert bot.openid.verify.await_count == 1
 
 
-async def test_bad_token_and_missing_browser_cookie(env):
+async def test_bad_assertion_and_missing_browser_cookie(env):
     bot, client = env
-    bot.wg.verify.side_effect = ValueError("wg_error")
+    bot.openid.verify.side_effect = ValueError("wg_error")
     assert (await invoke(bot, client)).status == 400
     assert bot.store.get(7) is None
     response = await client.get("/callback", params={"state": bot.states.issue(7)})
@@ -73,7 +74,7 @@ async def test_concurrent_duplicate_callbacks(env):
     token = bot.states.issue(7)
     results = await asyncio.gather(invoke(bot, client, token), invoke(bot, client, token))
     assert sorted(r.status for r in results) == [200, 400]
-    assert bot.wg.verify.await_count == 1
+    assert bot.openid.verify.await_count == 1
 
 
 async def test_return_targets_signed_channel_and_never_forwards_token(env):

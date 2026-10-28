@@ -4,9 +4,9 @@ Bot Discord indépendant de Battle-Conquest : vérification d'un compte World of
 
 ## Fonctionnement
 
-Un administrateur poste le panneau avec `/setup` dans **#verification**. Le bouton persistant répond en privé avec un lien valable dix minutes. Le joueur s'authentifie chez Wargaming ; le serveur valide son token avec `auth/prolongate` et récupère le pseudo avec `account/info`. Les identifiants et pseudos fournis directement dans l'URL de retour ne sont jamais utilisés comme preuve.
+Un administrateur poste le panneau avec `/setup` dans **#verification**. Le bouton persistant répond en privé avec un lien valable dix minutes. Le joueur s'authentifie chez Wargaming ; le serveur vérifie son assertion OpenID 2.0 par `check_authentication` auprès de Wargaming et récupère le pseudo avec l’API publique `account/info`. Les identifiants et pseudos fournis directement dans l'URL de retour ne sont jamais utilisés comme preuve.
 
-Les liaisons sont uniques dans les deux sens et persistées en SQLite. Une nouvelle liaison nécessite `/unlink` puis une vérification. Aucun token Wargaming n'est conservé. Le rôle peut être attribué même si Discord refuse ensuite le renommage ; la liaison est conservée et `/resync` permet de réessayer après correction des permissions.
+Les liaisons sont uniques dans les deux sens et persistées en SQLite. Une nouvelle liaison nécessite `/unlink` puis une vérification. Aucun token Wargaming n’est demandé ni conservé. Le rôle peut être attribué même si Discord refuse ensuite le renommage ; la liaison est conservée et `/resync` permet de réessayer après correction des permissions.
 
 Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouton d'origine. Le salon est inclus dans l'état signé ; aucun token WG n'est transmis à Discord. Les anciens liens encore valides reviennent au serveur. En cas de renommage interdit, la page confirme la liaison et le rôle attribué, puis explique que le membre peut conserver son pseudo sans modifier la hiérarchie du serveur.
 
@@ -31,7 +31,7 @@ Un contrôle quotidien actualise les liaisons dont la dernière synchronisation 
 3. Placer le rôle du bot au-dessus du rôle **joueur** et de tous les rôles des membres à renommer. Discord interdit de renommer le propriétaire du serveur et les membres au-dessus du bot. Le rôle joueur ne doit être ni géré par une intégration, ni `@everyone`, ni administrateur.
 4. Activer le mode développeur Discord ; copier l'ID du serveur et l'ID du rôle existant **joueur** dans `GUILD_ID` et `ROLE_ID`.
 5. Créer le salon texte **#verification**, visible par les membres à vérifier. Autoriser le bot à y voir le salon et envoyer des messages. Vérifier les surcharges de permissions du salon. Exécuter `/setup` après le démarrage du bot.
-6. Dans [Wargaming Developer Room](https://developers.wargaming.net/applications/), créer une application serveur pour World of Tanks EU. Copier son `application_id` dans `WG_APP_ID`. Configurer le retour autorisé pour `https://discord-auth.battle-conquest.eu/callback` selon les options du portail ; le flux ajoute un paramètre `state` à cette URL. Vérifier que le portail accepte les paramètres de retour lors de la recette réelle.
+6. Dans [Wargaming Developer Room](https://developers.wargaming.net/applications/), créer une application serveur pour World of Tanks EU. Copier son `application_id` dans `WG_APP_ID`. L’application API sert uniquement à lire les pseudos publics ; la connexion OpenID directe ne requiert pas de redirect URI dans cette application. Le callback reste `https://discord-auth.battle-conquest.eu/callback`, lié à `PUBLIC_URL`.
 
 ### 2. Domaine, réseau et configuration
 
@@ -67,7 +67,7 @@ Un contrôle quotidien actualise les liaisons dont la dernière synchronisation 
    docker exec swag nginx -s reload
    ```
 
-   Le fichier fourni désactive les logs HTTP sur ce vhost : Wargaming transmet un token dans la query du callback. Ne pas ajouter de journalisation des URL complètes via un proxy, WAF ou service externe en amont. Les logs applicatifs ne contiennent ni tokens ni URL de callback.
+   Le fichier fourni désactive les logs HTTP sur ce vhost : le callback contient une assertion OpenID et un état temporaire. Ne pas ajouter de journalisation des URL complètes via un proxy, WAF ou service externe en amont. Les logs applicatifs ne contiennent ni tokens ni URL de callback.
 
 ### 3. Démarrer et vérifier
 
@@ -136,6 +136,8 @@ python -m venv .venv
 
 Les tests utilisent exclusivement des bases SQLite temporaires et des doubles Discord/Wargaming. Ils ne touchent aucun serveur Discord ni base de production. Le fichier `requirements.lock` fixe les dépendances d'exécution utilisées par Docker ; les outils de développement sont déclarés séparément. Le workflow QA se lance à l'ouverture/mise à jour de PR ou manuellement ; ses résultats sont vérifiés manuellement.
 
-Références : [validation Wargaming](https://developers.wargaming.net/reference/all/wot/auth/prolongate/?language=en), [discord.py et permissions des commandes](https://discordpy.readthedocs.io/en/stable/interactions/api.html).
+Détails du protocole, des protections et de la migration : [connexion OpenID](docs/openid.md).
+
+Références : [OpenID 2.0](https://openid.net/specs/openid-authentication-2_0.html), [discord.py et permissions des commandes](https://discordpy.readthedocs.io/en/stable/interactions/api.html).
 
 Licence MIT.
