@@ -111,6 +111,24 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
 
+    def remember_tag(self, discord_id, suffix):
+        with self.db:
+            self.db.execute(
+                "INSERT OR IGNORE INTO clan_tag_state VALUES (?, ?)", (discord_id, suffix)
+            )
+
+    def contact_tags(self, discord_id):
+        return [
+            row[0]
+            for row in self.db.execute(
+                "SELECT suffix FROM clan_tag_state WHERE discord_id=?", (discord_id,)
+            )
+        ]
+
+    def clear_tags(self, discord_id):
+        with self.db:
+            self.db.execute("DELETE FROM clan_tag_state WHERE discord_id=?", (discord_id,))
+
     def due(self):
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)

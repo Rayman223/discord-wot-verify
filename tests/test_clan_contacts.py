@@ -207,8 +207,7 @@ async def test_tag_cleanup_can_be_retried_after_role_is_gone(bot):
     await client.claim_contact(10)
     member.nick = "Player [TAG]"
     member.edit.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "")
-    with pytest.raises(ValueError, match="clan_tag_cleanup_error"):
-        await client.remove_contact(10)
+    assert await client.remove_contact(10) is False
     assert client.store.contact(10) is None
     member.edit.side_effect = None
     await client.remove_contact(10)
@@ -219,6 +218,72 @@ async def test_nickname_without_suffix_is_preserved(bot):
     client, member = bot
     member.nick = "[TAG] Custom name"
     await client.remove_contact(10)
+    member.edit.assert_not_awaited()
+
+
+async def test_unlink_completes_despite_forbidden_tag_cleanup(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.nick = "Player [TAG]"
+    member.edit.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "")
+    client.role = lambda _: "player-role"
+    assert await client.remove(10) is False
+    assert client.store.get(10) is None
+    assert client.store.contact(10) is None
+    assert member.remove_roles.await_count == 2
+    assert client.store.contact_tags(10) == [" [TAG]"]
+    # Retry after restart, without any account link or clan reservation.
+    path = client.store.db.execute("PRAGMA database_list").fetchone()[2]
+    client.store.close()
+    client.store = Store(path)
+    member.edit.side_effect = None
+    member.roles = [SimpleNamespace(id=2)]
+    assert await client.remove_contact(10) is True
+    assert member.edit.await_args.kwargs["nick"] == "Player"
+    assert not client.store.contact_tags(10)
+
+
+async def test_resync_does_not_add_tag_without_contact_role(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.roles = [SimpleNamespace(id=2)]  # Return to guild / missed removal event.
+    member.nick = "Player [TAG]"
+    client.role = lambda _: "player-role"
+    await client.sync(client.store.get(10))
+    assert member.edit.await_args.kwargs["nick"] == "Player"
+    # Keep the slot for manual review, including ambiguous earlier Discord grants.
+    assert client.store.contact(10)
+    assert not client.store.contact_tags(10)
+
+
+async def test_unlink_never_alters_non_contact_custom_suffix(bot):
+    client, member = bot
+    member.nick = "Custom [ALT]"
+    client.role = lambda _: "player-role"
+    assert await client.remove(10) is True
+    member.edit.assert_not_awaited()
+    assert client.store.get(10) is None
+
+
+async def test_cleanup_removes_only_recorded_tag_once(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.nick = "Custom [ALT] [TAG]"
+    assert await client.remove_contact(10) is True
+    assert member.edit.await_args.kwargs["nick"] == "Custom [ALT]"
+    member.roles = [SimpleNamespace(id=2)]
+    member.nick = "Custom [ALT]"
+    member.edit.reset_mock()
+    assert await client.remove_contact(10) is True
+    member.edit.assert_not_awaited()
+
+
+async def test_cleanup_preserves_user_changed_suffix(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.nick = "Custom [ALT]"
+    member.edit.reset_mock()
+    assert await client.remove_contact(10) is True
     member.edit.assert_not_awaited()
 
 

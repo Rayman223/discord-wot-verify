@@ -38,5 +38,6 @@
   "clan_name_long": "Your World of Tanks nickname with the clan tag exceeds Discord\u2019s 32-character limit. Please ask a moderator for a manual verification.",
   "clan_removed": "The clan contact role, reservation and nickname suffix have been removed. Your account link is kept.",
   "clan_player_required": "You must have the player role before becoming a clan contact. Please verify or resync your account first.",
-  "clan_tag_cleanup_error": "The clan contact role and reservation are removed, but Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions, then retry /admin_contact_remove."
+  "clan_tag_cleanup_error": "The clan contact role and reservation are removed, but Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions, then retry /admin_contact_remove.",
+  "unlinked_tag_pending": "Your account link, player role and clan contact role have been removed. Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions and retry /admin_contact_remove."
 }
