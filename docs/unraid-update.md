@@ -51,6 +51,8 @@ Après le début du remplacement, une erreur ou un contrôle de santé négatif 
 
 Le script renvoie un code différent de zéro même si la restauration réussit. Si une étape de restauration échoue, son message indique l'action bloquée et l'emplacement de la sauvegarde. Il ne redémarre pas volontairement l'ancien code sur des données dont la restauration a échoué. Une coupure électrique ou un arrêt forcé (`kill -9`) ne permettent pas l'exécution du mécanisme de restauration : examiner les conteneurs et les sauvegardes manuellement avant de relancer.
 
+Si Docker ne permet pas de déterminer la présence du nouveau conteneur ou de confirmer sa suppression, la procédure s'arrête **sans déplacer ni restaurer les données**. Il faut rétablir l'accès à Docker et vérifier les conteneurs avant toute intervention sur SQLite. Les fichiers récupérés par Git restent lisibles par l'utilisateur du bot ; le masque privé est limité au verrou et aux sauvegardes.
+
 Le retour arrière concerne le conteneur et les données ; le checkout Git reste à la version récupérée. Il ne faut pas considérer cette procédure comme une sauvegarde des secrets : `.env` doit être sauvegardé séparément et en privé. Les sauvegardes de données contiennent des identifiants personnels et sont créées avec des permissions privées. Elles ne sont pas purgées automatiquement : les supprimer manuellement après validation et selon la rétention souhaitée. Le script ne supprime aucune image Docker.
 
 ## Vérifier après mise à jour

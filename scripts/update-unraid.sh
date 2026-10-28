@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Mise à jour Docker sans Compose. Voir docs/unraid-update.md.
 set -Eeuo pipefail
-umask 077
+# Git doit créer du code lisible par l'utilisateur non root de l'image.
+umask 022
 
 main() {
     local project_dir container network image timeout candidate previous backup=""
@@ -19,7 +20,8 @@ main() {
     [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || fail "HEALTH_TIMEOUT doit être un entier positif."
     cd -- "$project_dir"
     project_dir="$(pwd -P)"
-    exec 9>"$project_dir/.unraid-update.lock"
+    (umask 077; touch "$project_dir/.unraid-update.lock")
+    exec 9>>"$project_dir/.unraid-update.lock"
     flock -n 9 || fail "Une mise à jour est déjà en cours."
     [[ -f .env ]] || fail "Fichier .env manquant ; reprendre .env.example."
     [[ -d data && ! -L data ]] || fail "Le répertoire data doit exister et ne pas être un lien symbolique."
@@ -28,11 +30,22 @@ main() {
     docker info >/dev/null
     docker network inspect "$network" >/dev/null
 
-    if docker container inspect "$container" >/dev/null 2>&1; then
+    # Une liste réussie distingue l'absence d'un conteneur d'une panne Docker.
+    container_exists() {
+        local names name
+        names="$(docker container ls --all --format '{{.Names}}')" || return 2
+        while IFS= read -r name; do
+            [[ "$name" == "$container" ]] && return 0
+        done <<< "$names"
+        return 1
+    }
+    if container_exists; then
         old_exists=1
         local mounted_data
         mounted_data="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' "$container")"
         [[ "$mounted_data" == "$project_dir/data" ]] || fail "Le conteneur existant ne monte pas $project_dir/data ; vérifier PROJECT_DIR et CONTAINER_NAME."
+    else
+        [[ $? == 1 ]] || fail "Impossible de vérifier les conteneurs Docker."
     fi
 
     printf 'Récupération de main…\n'
@@ -50,9 +63,13 @@ main() {
         set +e
         printf 'Mise à jour interrompue ; tentative de restauration…\n' >&2
         if (( new_started )); then
-            if docker container inspect "$container" >/dev/null 2>&1 &&
-               ! docker rm --force "$container" >/dev/null; then
-                printf 'Impossible de retirer le nouveau conteneur. Aucune restauration des données effectuée.\n' >&2
+            if container_exists; then
+                if ! docker rm --force "$container" >/dev/null; then
+                    printf 'Impossible de retirer le nouveau conteneur. Aucune restauration des données effectuée.\n' >&2
+                    exit "$code"
+                fi
+            elif [[ $? != 1 ]]; then
+                printf 'État Docker inconnu. Aucune restauration des données effectuée ; sauvegarde : %s\n' "$backup" >&2
                 exit "$code"
             fi
         fi
@@ -85,11 +102,11 @@ main() {
         old_stopped=1
         docker stop --time 30 "$container" >/dev/null
     fi
-    mkdir -p .deploy-backups
+    (umask 077; mkdir -p .deploy-backups)
     backup="$(mktemp -d "$project_dir/.deploy-backups/update-XXXXXXXX")"
     # SQLite et ses fichiers WAL sont copiés ensemble, une fois le bot arrêté.
     # Renommer le fichier seulement après une archive terminée avec succès.
-    tar -cpf "$backup/data.tar.partial" -C "$project_dir" data
+    (umask 077; tar -cpf "$backup/data.tar.partial" -C "$project_dir" data)
     mv -- "$backup/data.tar.partial" "$backup/data.tar"
     if (( old_exists )); then
         docker rename "$container" "$previous"

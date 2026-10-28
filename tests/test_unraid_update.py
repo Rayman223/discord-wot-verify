@@ -27,6 +27,14 @@ if tool == "git":
         output = "main"
     elif args[0] == "pull" and mode == "pull":
         code = 1
+    elif args[0] == "pull":
+        (root / "wot_verify").mkdir(exist_ok=True)
+        (root / "wot_verify" / "updated.py").write_text("VALUE = 1\n")
+elif args[:2] == ["container", "ls"]:
+    if mode == "docker_unknown" and any(c["version"] == "new" for c in state["containers"].values()):
+        code = 1
+    else:
+        output = "\n".join(state["containers"])
 elif args[:2] == ["container", "inspect"]:
     code = 0 if args[-1] in state["containers"] else 1
 elif args[0] == "inspect":
@@ -39,7 +47,10 @@ elif args[0] == "build":
 elif args[0] == "stop":
     state["containers"][args[-1]]["running"] = False
 elif args[0] == "rename":
-    state["containers"][args[2]] = state["containers"].pop(args[1])
+    if args[2] in state["containers"]:
+        code = 1
+    else:
+        state["containers"][args[2]] = state["containers"].pop(args[1])
 elif args[0] == "run":
     if mode == "run":
         code = 1
@@ -48,10 +59,10 @@ elif args[0] == "run":
         state["containers"][name] = {"running": mode != "health", "version": "new"}
         (root / "data" / "schema").write_text("new schema")
 elif args[0] == "exec":
-    code = 1 if mode == "health" else 0
+    code = 1 if mode in {"health", "docker_unknown", "remove_failure"} else 0
 elif args[0] == "rm":
     name = args[-1]
-    if name not in state["containers"]:
+    if name not in state["containers"] or mode == "remove_failure":
         code = 1
     else:
         del state["containers"][name]
@@ -121,6 +132,12 @@ def test_update_keeps_data_backup_and_replaces_only_after_build(deployment):
     assert list((project / ".deploy-backups").glob("*/data.tar"))
     assert (project / "data/schema").read_text() == "new schema"
     assert (project / ".env").read_text() == "DISCORD_TOKEN=private-token\n"
+    assert (project / "wot_verify/updated.py").stat().st_mode & 0o777 == 0o644
+    assert (project / "wot_verify").stat().st_mode & 0o777 == 0o755
+    assert (project / ".unraid-update.lock").stat().st_mode & 0o777 == 0o600
+    archive = next((project / ".deploy-backups").glob("*/data.tar"))
+    assert archive.stat().st_mode & 0o777 == 0o600
+    assert archive.parent.stat().st_mode & 0o777 == 0o700
 
 
 @pytest.mark.parametrize("mode", ["pull", "build", "mount"])
@@ -170,3 +187,15 @@ def test_incomplete_backup_restarts_old_bot_without_restoring_partial_archive(de
     assert (project / "data/schema").read_text() == "old schema"
     assert list((project / ".deploy-backups").glob("*/data.tar.partial"))
     assert not list((project / ".deploy-backups").glob("*/failed-data"))
+
+
+@pytest.mark.parametrize("mode", ["docker_unknown", "remove_failure"])
+def test_uncertain_stop_never_restores_data(deployment, mode):
+    project, _ = deployment
+    result, state = run(deployment, mode)
+    assert result.returncode != 0
+    assert state["containers"]["wot-verify"]["version"] == "new"
+    assert (project / "data/schema").read_text() == "new schema"
+    assert not list((project / ".deploy-backups").glob("*/failed-data"))
+    assert not any(c[:2] == ["docker", "start"] for c in state["calls"])
+    assert "Aucune restauration des données effectuée" in result.stderr
