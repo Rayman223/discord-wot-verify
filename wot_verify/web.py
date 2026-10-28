@@ -12,7 +12,10 @@ from .i18n import t
 log = logging.getLogger(__name__)
 
 
-def page(key, status=200, *, guild_id, channel_id=0):
+def page(key, status=200, *, guild_id, channel_id=0, locale="en"):
+    def translate(key):
+        return t(key, locale)
+
     destination = f"https://discord.com/channels/{int(guild_id)}"
     if channel_id:
         destination += f"/{int(channel_id)}"
@@ -25,13 +28,13 @@ def page(key, status=200, *, guild_id, channel_id=0):
     )
     return web.Response(
         text=(
-            "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+            f"<!doctype html><html lang='{escape(locale, quote=True)}'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width'>"
-            f"<title>{escape(t(title_key))} · WoT Verify</title>"
+            f"<title>{escape(translate(title_key))} · WoT Verify</title>"
             "<link rel='stylesheet' href='/assets/return.css'></head><body>"
-            f"<main><div class='brand'>WoT Verify</div><h1>{escape(t(title_key))}</h1>"
-            f"<p>{escape(t(key))}</p><a class='button' href='{destination}' rel='noreferrer'>"
-            f"{escape(t('return_discord'))}</a><p class='hint'>{escape(t('return_hint'))}</p>"
+            f"<main><div class='brand'>WoT Verify</div><h1>{escape(translate(title_key))}</h1>"
+            f"<p>{escape(translate(key))}</p><a class='button' href='{destination}' rel='noreferrer'>"
+            f"{escape(translate('return_discord'))}</a><p class='hint'>{escape(translate('return_hint'))}</p>"
             "</main></body></html>"
         ),
         content_type="text/html",
@@ -61,7 +64,13 @@ def application(bot):
     app = web.Application(middlewares=[headers], client_max_size=4096)
 
     def render(key, status=200, channel_id=0):
-        return page(key, status, guild_id=bot.config.guild_id, channel_id=channel_id)
+        return page(
+            key,
+            status,
+            guild_id=bot.config.guild_id,
+            channel_id=channel_id,
+            locale=getattr(bot.config, "locale", "en"),
+        )
 
     async def login(request):
         if not bot.is_ready():

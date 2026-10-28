@@ -114,3 +114,22 @@ async def test_invalid_state_returns_to_server_without_trusting_channel(env):
     assert response.status == 400
     assert "href='https://discord.com/channels/1'" in body
     assert "channels/1/999" not in body
+
+
+@pytest.mark.parametrize("key", ["success", "nickname_blocked", "invalid_state"])
+async def test_french_return_pages(env, key):
+    from wot_verify.i18n import t
+
+    bot, client = env
+    bot.config.locale = "fr"
+    if key == "nickname_blocked":
+        bot.sync.side_effect = ValueError(key)
+    if key == "invalid_state":
+        response = await client.get("/callback")
+    else:
+        response = await invoke(bot, client, bot.states.issue(7, 42))
+    body = await response.text()
+    assert "lang='fr'" in body
+    assert t(key, "fr") in body
+    assert "Retourner sur Discord" in body
+    assert "https://discord.com/channels/1" in body

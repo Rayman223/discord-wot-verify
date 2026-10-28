@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from .i18n import SUPPORTED_LOCALES
+
 
 @dataclass(frozen=True)
 class Config:
@@ -15,6 +17,7 @@ class Config:
     database: str = "/data/verify.sqlite3"
     port: int = 8080
     clan_role_id: int = 0
+    locale: str = "en"
 
     @classmethod
     def load(cls):
@@ -25,11 +28,14 @@ class Config:
             guild_id=int(os.environ["GUILD_ID"]),
             role_id=int(os.environ["ROLE_ID"]),
             public_url=os.environ["PUBLIC_URL"].rstrip("/"),
+            locale=os.getenv("LOCALE", "en"),
             region=os.getenv("WG_REGION", "eu"),
             database=os.getenv("DATABASE_PATH", "/data/verify.sqlite3"),
             port=int(os.getenv("PORT", "8080")),
             clan_role_id=int(os.getenv("CLAN_CONTACT_ROLE_ID", "0")),
         )
+        if config.locale not in SUPPORTED_LOCALES:
+            raise ValueError("LOCALE must be en or fr")
         url = urlsplit(config.public_url)
         if (
             url.scheme != "https"
