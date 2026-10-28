@@ -9,6 +9,7 @@ from discord.ext import tasks
 
 from .i18n import t
 from .openid import OpenID
+from .reports import diagnose_report, status_report
 from .security import States
 from .store import Store
 from .wargaming import CONTACT_RANKS, Wargaming
@@ -355,6 +356,23 @@ class VerifyBot(discord.Client):
 
         self.tree.interaction_check = check
 
+        @self.tree.command(description=self.t("command_status"))
+        @app_commands.guild_only()
+        @app_commands.checks.cooldown(1, 30, key=lambda i: i.user.id)
+        async def status(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            report = await status_report(self, interaction.user.id)
+            await interaction.followup.send(embed=report, ephemeral=True)
+
+        @self.tree.command(description=self.t("command_diagnose"))
+        @app_commands.guild_only()
+        @app_commands.default_permissions(administrator=True)
+        @app_commands.checks.has_permissions(administrator=True)
+        async def diagnose(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            report = diagnose_report(self, interaction)
+            await interaction.followup.send(embed=report, ephemeral=True)
+
         @self.tree.command(description=self.t("command_admin_contact_remove"))
         @app_commands.guild_only()
         @app_commands.default_permissions(manage_roles=True)
@@ -439,6 +457,8 @@ class VerifyBot(discord.Client):
                 message = self.t(str(original))
             elif isinstance(original, discord.HTTPException):
                 message = self.t("discord_error")
+            elif isinstance(original, app_commands.CommandOnCooldown):
+                message = self.t("command_cooldown")
             elif isinstance(original, app_commands.CheckFailure):
                 message = self.t("admin_only")
             else:
