@@ -1,3 +1,5 @@
+import re
+
 import aiohttp
 
 CONTACT_RANKS = frozenset({"commander", "executive_officer", "recruitment_officer"})
@@ -38,7 +40,7 @@ class Wargaming:
 
     async def clan_membership(self, account_id):
         data = await self.request(
-            "clans/accountinfo", account_id=str(account_id), fields="clan.clan_id,role"
+            "clans/accountinfo", account_id=str(account_id), fields="clan.clan_id,clan.tag,role"
         )
         if str(account_id) not in data:
             raise ValueError("wg_error")
@@ -53,4 +55,7 @@ class Wargaming:
         clan_id = clan.get("clan_id")
         if type(clan_id) is not int or not 0 < clan_id < 2**63:
             raise ValueError("wg_error")
-        return clan_id, entry["role"]
+        tag = clan.get("tag")
+        if not isinstance(tag, str) or not re.fullmatch(r"[A-Za-z0-9_-]{2,5}", tag):
+            raise ValueError("wg_error")
+        return clan_id, entry["role"], tag

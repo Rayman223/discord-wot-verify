@@ -17,6 +17,9 @@ Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouto
 | `/unlink confirm:True` | Membre | Retire le rôle et la liaison ; conserve le pseudo actuel. |
 | `/admin_unlink discord_id:…` | Administrateur | Supprime une liaison à partir de l'ID Discord. |
 | `/admin_unlink account_id:…` | Administrateur | Supprime une liaison à partir de l'ID WoT. |
+| `/admin_contact_remove discord_id:…` | Manage Roles | Retire le contact de clan et libère la place après vérification manuelle. |
+
+Le second bouton **Become a clan contact** vérifie les grades de commandant, commandant en second ou officier de recrutement, attribue un rôle distinct et applique le pseudo `PseudoWG [TAG]`. Un seul contact est autorisé par clan ; un second candidat est orienté vers un modérateur pour vérification manuelle. Activer avec `CLAN_CONTACT_ROLE_ID` dans `.env`, puis publier le panneau avec `/setup`. Voir le [guide des contacts de clan](docs/clan-contacts.md) pour la configuration et les limites.
 
 Les identifiants des commandes administrateur sont saisis en texte pour éviter les arrondis sur les grands IDs Discord. Donner exactement l'un des deux paramètres. Les permissions sont vérifiées à l'exécution, en plus des restrictions d'affichage des commandes. Un administrateur peut libérer une liaison même après le départ ou le bannissement du membre. Si le membre est présent et que le retrait du rôle échoue, la liaison est conservée pour permettre une nouvelle tentative.
 

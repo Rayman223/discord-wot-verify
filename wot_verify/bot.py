@@ -10,7 +10,7 @@ from .i18n import t
 from .openid import OpenID
 from .security import States
 from .store import Store
-from .wargaming import Wargaming
+from .wargaming import CONTACT_RANKS, Wargaming
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +24,27 @@ class LoginView(discord.ui.View):
         )
         button.callback = self.login
         self.add_item(button)
+        contact = discord.ui.Button(
+            label=t("clan_button"),
+            custom_id="wot:clan-contact:v1",
+            style=discord.ButtonStyle.secondary,
+        )
+        contact.callback = self.clan_contact
+        self.add_item(contact)
+
+    async def clan_contact(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if interaction.guild_id != self.bot.config.guild_id:
+            return await interaction.followup.send(t("wrong_server"), ephemeral=True)
+        try:
+            async with self.bot.lock:
+                await self.bot.claim_contact(interaction.user.id)
+            message = t("clan_success")
+        except ValueError as exc:
+            message = t(str(exc))
+        except discord.HTTPException:
+            message = t("clan_discord_error")
+        await interaction.followup.send(message, ephemeral=True)
 
     async def login(self, interaction):
         if interaction.guild_id != self.bot.config.guild_id:
@@ -100,6 +121,8 @@ class VerifyBot(discord.Client):
     async def sync(self, row):
         member = await self.member(row["discord_id"])
         nickname = await self.wg.nickname(row["account_id"])
+        if self.store.contact(row["discord_id"]):
+            nickname = await self.contact_nickname(row, nickname)
         await member.add_roles(self.role(member), reason="Wargaming account verification")
         try:
             if member.nick != nickname:
@@ -110,6 +133,85 @@ class VerifyBot(discord.Client):
             raise ValueError("nickname_error") from None
         self.store.mark_synced(member.id, nickname)
 
+    def contact_role(self, member):
+        role_id = getattr(self.config, "clan_role_id", 0)
+        if not role_id:
+            raise ValueError("clan_disabled")
+        role = member.guild.get_role(role_id)
+        if (
+            role is None
+            or role.is_default()
+            or role.managed
+            or role.permissions.administrator
+            or role.id == self.config.role_id
+        ):
+            raise ValueError("clan_discord_error")
+        return role
+
+    async def contact_nickname(self, row, nickname):
+        membership = await self.wg.clan_membership(row["account_id"])
+        contact = self.store.contact(row["discord_id"])
+        if (
+            membership is None
+            or membership[1] not in CONTACT_RANKS
+            or (
+                contact
+                and (contact["region"], contact["clan_id"]) != (row["region"], membership[0])
+            )
+        ):
+            raise ValueError("clan_review")
+        result = f"{nickname} [{membership[2]}]"
+        if len(result) > 32:
+            raise ValueError("clan_name_long")
+        return result
+
+    async def claim_contact(self, discord_id):
+        # Caller holds the shared lock across lookup, reservation and Discord updates.
+        if not self.is_ready():
+            raise ValueError("not_ready")
+        if not getattr(self.config, "clan_role_id", 0):
+            raise ValueError("clan_disabled")
+        row = self.store.get(discord_id)
+        if row is None:
+            raise ValueError("clan_not_linked")
+        membership = await self.wg.clan_membership(row["account_id"])
+        if membership is None or membership[1] not in CONTACT_RANKS:
+            raise ValueError("clan_ineligible")
+        current = self.store.contact(discord_id)
+        if current and (current["region"], current["clan_id"]) != (row["region"], membership[0]):
+            raise ValueError("clan_review")
+        nickname = await self.wg.nickname(row["account_id"])
+        nickname = f"{nickname} [{membership[2]}]"
+        if len(nickname) > 32:
+            raise ValueError("clan_name_long")
+        member = await self.member(discord_id)
+        role = self.contact_role(member)
+        self.store.reserve_contact(discord_id, row["region"], membership[0])
+        try:
+            await member.add_roles(role, reason="Verified clan contact")
+        except discord.Forbidden:
+            if current is None:
+                self.store.release_contact(discord_id)
+            raise
+        # On timeout/unknown Discord result, keep the reservation to prevent duplicates.
+        try:
+            if member.nick != nickname:
+                await member.edit(nick=nickname, reason="Clan contact nickname")
+        except discord.HTTPException:
+            raise ValueError("clan_nickname_error") from None
+
+    async def remove_contact(self, discord_id, member=None):
+        if not self.store.contact(discord_id):
+            return
+        if member is None:
+            try:
+                member = await self.member(discord_id)
+            except discord.NotFound:
+                member = None
+        if member:
+            await member.remove_roles(self.contact_role(member), reason="Clan contact removed")
+        self.store.release_contact(discord_id)
+
     async def remove(self, discord_id):
         # Keep the link on permission/network failures so an administrator can retry.
         try:
@@ -117,6 +219,7 @@ class VerifyBot(discord.Client):
         except discord.NotFound:
             member = None
         if member:
+            await self.remove_contact(discord_id, member)
             await member.remove_roles(self.role(member), reason="Wargaming account unlinked")
         self.store.unlink(discord_id)
 
@@ -160,6 +263,24 @@ class VerifyBot(discord.Client):
             return True
 
         self.tree.interaction_check = check
+
+        @self.tree.command(
+            description="Remove a clan contact role and free the clan slot after review"
+        )
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_roles=True)
+        @app_commands.checks.has_permissions(manage_roles=True)
+        async def admin_contact_remove(interaction: discord.Interaction, discord_id: str):
+            await interaction.response.defer(ephemeral=True)
+            if (
+                not discord_id.isascii()
+                or not discord_id.isdigit()
+                or not 0 < int(discord_id) < 2**63
+            ):
+                raise ValueError("bad_target")
+            async with self.lock:
+                await self.remove_contact(int(discord_id))
+            await interaction.followup.send(t("clan_removed"), ephemeral=True)
 
         @self.tree.command(description="Post the Wargaming verification panel in this channel")
         @app_commands.guild_only()

@@ -18,9 +18,11 @@ async def test_missing_account_or_invalid_nickname(account):
 )
 async def test_clan_membership(rank):
     wg = Wargaming(None, "app", "eu")
-    wg.request = AsyncMock(return_value={"10": {"clan": {"clan_id": 42}, "role": rank}})
-    assert await wg.clan_membership(10) == (42, rank)
-    assert wg.request.await_args.kwargs["fields"] == "clan.clan_id,role"
+    wg.request = AsyncMock(
+        return_value={"10": {"clan": {"clan_id": 42, "tag": "TAG"}, "role": rank}}
+    )
+    assert await wg.clan_membership(10) == (42, rank, "TAG")
+    assert wg.request.await_args.kwargs["fields"] == "clan.clan_id,clan.tag,role"
 
 
 async def test_player_without_clan():
