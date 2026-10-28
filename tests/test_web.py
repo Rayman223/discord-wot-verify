@@ -16,7 +16,7 @@ from wot_verify.web import application
 async def env(tmp_path):
     store = Store(str(tmp_path / "test.sqlite3"))
     bot = SimpleNamespace(
-        config=SimpleNamespace(region="eu"),
+        config=SimpleNamespace(region="eu", guild_id=1),
         store=store,
         states=States("x" * 32, 1, store),
         is_ready=lambda: True,
@@ -74,3 +74,42 @@ async def test_concurrent_duplicate_callbacks(env):
     results = await asyncio.gather(invoke(bot, client, token), invoke(bot, client, token))
     assert sorted(r.status for r in results) == [200, 400]
     assert bot.wg.verify.await_count == 1
+
+
+async def test_return_targets_signed_channel_and_never_forwards_token(env):
+    bot, client = env
+    response = await invoke(
+        bot, client, bot.states.issue(7, 42), next="https://attacker.example", channel_id="999"
+    )
+    body = await response.text()
+    assert "href='https://discord.com/channels/1/42'" in body
+    assert "Return to Discord" in body
+    assert "attacker.example" not in body
+    assert "secret" not in body
+    assert "style-src 'self'" in response.headers["Content-Security-Policy"]
+    css = await client.get("/assets/return.css")
+    assert css.status == 200
+    assert css.content_type == "text/css"
+
+
+async def test_partial_success_explains_hierarchy_and_clears_cookie(env):
+    bot, client = env
+    bot.sync.side_effect = ValueError("nickname_blocked")
+    response = await invoke(bot, client, bot.states.issue(7, 42))
+    body = await response.text()
+    assert response.status == 409
+    assert "Account linked" in body
+    assert "your player role is in place" in body
+    assert "no role hierarchy change is required" in body
+    assert "https://discord.com/channels/1/42" in body
+    assert response.cookies["wot_verification"]["max-age"] == "0"
+
+
+async def test_invalid_state_returns_to_server_without_trusting_channel(env):
+    bot, client = env
+    token = bot.states.issue(7, 42).replace(".42.", ".999.")
+    response = await invoke(bot, client, token)
+    body = await response.text()
+    assert response.status == 400
+    assert "href='https://discord.com/channels/1'" in body
+    assert "channels/1/999" not in body

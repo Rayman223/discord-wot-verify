@@ -66,3 +66,13 @@ def test_migrations_restart_and_monthly_due(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         db.db.execute("INSERT INTO links VALUES (2, 'eu', 10, 'Duplicate', 0)")
     db.close()
+
+
+def test_signed_channel_and_legacy_links(store):
+    states = States("x" * 32, 123, store)
+    token = states.issue(456, 789)
+    assert states.consume_details(token) == (456, 789)
+    token = states.issue(456)
+    payload = token.rsplit(".", 2)[0]  # Simulate a link issued before channel context existed.
+    legacy = f"{payload}.{states.signature(payload)}"
+    assert states.consume_details(legacy) == (456, 0)

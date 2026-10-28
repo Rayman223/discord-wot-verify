@@ -76,3 +76,31 @@ async def test_join_restores_role_without_renaming(bot):
     member.add_roles.assert_awaited_once()
     member.send.assert_awaited_once()
     member.edit.assert_not_awaited()
+
+
+async def test_rename_refusal_distinguished_from_role_failure(bot):
+    bot.store.link(1, "eu", 10, "Player")
+    forbidden = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "")
+    member = SimpleNamespace(
+        id=1, nick="OldName", add_roles=AsyncMock(), edit=AsyncMock(side_effect=forbidden)
+    )
+    bot.member = AsyncMock(return_value=member)
+    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.role = lambda _: "role"
+    with pytest.raises(ValueError, match="nickname_blocked"):
+        await bot.sync(bot.store.get(1))
+    member.add_roles.assert_awaited_once()
+    member.add_roles.side_effect = forbidden
+    with pytest.raises(discord.Forbidden):
+        await bot.sync(bot.store.get(1))
+
+
+async def test_matching_nickname_needs_no_edit(bot):
+    bot.store.link(1, "eu", 10, "Player")
+    member = SimpleNamespace(id=1, nick="Player", add_roles=AsyncMock(), edit=AsyncMock())
+    bot.member = AsyncMock(return_value=member)
+    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.role = lambda _: "role"
+    await bot.sync(bot.store.get(1))
+    member.edit.assert_not_awaited()
+    assert bot.store.get(1)["synced_at"] > 0
