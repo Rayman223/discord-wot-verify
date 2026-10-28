@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from .i18n import t
+from .openid import OpenID
 from .security import States
 from .store import Store
 from .wargaming import Wargaming
@@ -59,6 +60,7 @@ class VerifyBot(discord.Client):
 
         self.session = aiohttp.ClientSession()
         self.wg = Wargaming(self.session, self.config.wg_app_id, self.config.region)
+        self.openid = OpenID(self.session, self.config.public_url, self.config.region, self.store)
         self.add_view(LoginView(self))
         self.runner = web.AppRunner(application(self), access_log=None)
         await self.runner.setup()

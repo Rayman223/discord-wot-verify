@@ -1,5 +1,3 @@
-from urllib.parse import urlencode
-
 import aiohttp
 
 
@@ -7,9 +5,6 @@ class Wargaming:
     def __init__(self, session, app_id, region):
         self.session, self.app_id, self.region = session, app_id, region
         self.base = f"https://api.worldoftanks.{region}/wot"
-
-    def login_url(self, callback):
-        return f"{self.base}/auth/login/?{urlencode({'application_id': self.app_id, 'redirect_uri': callback})}"
 
     async def request(self, endpoint, **params):
         try:
@@ -30,16 +25,6 @@ class Wargaming:
         except (aiohttp.ClientError, TimeoutError, ValueError, TypeError):
             # Never include the URL, response body or access token in exceptions/logs.
             raise ValueError("wg_error") from None
-
-    async def verify(self, token):
-        data = await self.request("auth/prolongate", access_token=token)
-        try:
-            account_id = int(data["account_id"])
-            if account_id <= 0:
-                raise ValueError
-        except (KeyError, ValueError, TypeError):
-            raise ValueError("wg_error") from None
-        return account_id, await self.nickname(account_id)
 
     async def nickname(self, account_id):
         data = await self.request("account/info", account_id=str(account_id), fields="nickname")

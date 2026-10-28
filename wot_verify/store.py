@@ -44,6 +44,18 @@ class Store:
     def get(self, discord_id):
         return self.db.execute("SELECT * FROM links WHERE discord_id=?", (discord_id,)).fetchone()
 
+    def use_openid_nonce(self, nonce):
+        try:
+            with self.db:
+                self.db.execute(
+                    "DELETE FROM openid_nonces WHERE used_at<?", (int(time.time()) - 1200,)
+                )
+                self.db.execute(
+                    "INSERT INTO openid_nonces VALUES (?, ?)", (nonce, int(time.time()))
+                )
+        except sqlite3.IntegrityError:
+            raise ValueError("wg_error") from None
+
     def by_account(self, region, account_id):
         return self.db.execute(
             "SELECT * FROM links WHERE region=? AND account_id=?", (region, account_id)

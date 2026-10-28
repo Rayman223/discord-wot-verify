@@ -72,10 +72,7 @@ def application(bot):
             bot.states.inspect(state)
         except ValueError:
             return render("invalid_state", 400)
-        from urllib.parse import urlencode
-
-        callback_url = f"{bot.config.public_url}/callback?{urlencode({'state': state})}"
-        response = web.HTTPFound(bot.wg.login_url(callback_url))
+        response = web.HTTPFound(bot.openid.login_url(state))
         response.set_cookie(
             "wot_verification",
             hashlib.sha256(state.encode()).hexdigest(),
@@ -100,10 +97,8 @@ def application(bot):
         try:
             async with bot.lock:
                 discord_id, channel_id = bot.states.consume_details(state)
-                token = request.query.get("access_token", "")
-                if request.query.get("status") != "ok" or not token or len(token) > 2048:
-                    raise ValueError("wg_error")
-                account_id, nickname = await bot.wg.verify(token)
+                account_id = await bot.openid.verify(request.query, state)
+                nickname = await bot.wg.nickname(account_id)
                 # Callback account_id/nickname are deliberately ignored.
                 await bot.member(discord_id)
                 bot.store.link(discord_id, bot.config.region, account_id, nickname)
