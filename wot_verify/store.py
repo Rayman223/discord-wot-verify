@@ -1,0 +1,82 @@
+import sqlite3
+import time
+from pathlib import Path
+
+
+class Store:
+    def __init__(self, path: str):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(path)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA busy_timeout=5000")
+        self.db.execute("CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY)")
+        root = Path(__file__).resolve().parent / "migrations"
+        for migration in sorted(root.glob("*.sql")):
+            if not self.db.execute(
+                "SELECT 1 FROM migrations WHERE name=?", (migration.name,)
+            ).fetchone():
+                # Schema SQL is idempotent, including recovery after an interrupted migration.
+                self.db.executescript(migration.read_text())
+                with self.db:
+                    self.db.execute("INSERT INTO migrations VALUES (?)", (migration.name,))
+
+    def challenge(self, nonce, discord_id, expires_at):
+        with self.db:
+            self.db.execute(
+                "DELETE FROM challenges WHERE expires_at<=? OR discord_id=?",
+                (int(time.time()), discord_id),
+            )
+            self.db.execute(
+                "INSERT INTO challenges VALUES (?, ?, ?)", (nonce, discord_id, expires_at)
+            )
+
+    def consume(self, nonce, discord_id, now):
+        with self.db:
+            return (
+                self.db.execute(
+                    "DELETE FROM challenges WHERE nonce=? AND discord_id=? AND expires_at>?",
+                    (nonce, discord_id, now),
+                ).rowcount
+                == 1
+            )
+
+    def get(self, discord_id):
+        return self.db.execute("SELECT * FROM links WHERE discord_id=?", (discord_id,)).fetchone()
+
+    def by_account(self, region, account_id):
+        return self.db.execute(
+            "SELECT * FROM links WHERE region=? AND account_id=?", (region, account_id)
+        ).fetchone()
+
+    def link(self, discord_id, region, account_id, nickname):
+        try:
+            with self.db:
+                self.db.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?, 0)",
+                    (discord_id, region, account_id, nickname),
+                )
+        except sqlite3.IntegrityError:
+            existing = self.get(discord_id)
+            if not existing or (existing["region"], existing["account_id"]) != (region, account_id):
+                raise ValueError("already_linked") from None
+
+    def mark_synced(self, discord_id, nickname):
+        with self.db:
+            self.db.execute(
+                "UPDATE links SET nickname=?, synced_at=? WHERE discord_id=?",
+                (nickname, int(time.time()), discord_id),
+            )
+
+    def unlink(self, discord_id):
+        with self.db:
+            self.db.execute("DELETE FROM challenges WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM links WHERE discord_id=?", (discord_id,))
+
+    def due(self):
+        return self.db.execute(
+            "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
+        ).fetchall()
+
+    def close(self):
+        self.db.close()

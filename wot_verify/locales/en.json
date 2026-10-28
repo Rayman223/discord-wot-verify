@@ -1,0 +1,21 @@
+{
+  "login_button": "Connect with Wargaming",
+  "panel": "Verify your World of Tanks account to receive the player role and use your in-game nickname on this server.",
+  "login_prompt": "Use this private link within 10 minutes. Only connect your own account.",
+  "success": "Account verified. You can return to Discord.",
+  "synced": "Your player role and World of Tanks nickname are up to date.",
+  "unlinked": "Your account link and player role have been removed. Your current nickname has been kept.",
+  "not_linked": "No matching account link was found.",
+  "already_linked": "This Discord or Wargaming account is already linked. Use /unlink first, or contact an administrator.",
+  "invalid_state": "This verification link is invalid, expired or already used. Request a new link in Discord.",
+  "wg_error": "Wargaming could not verify your account. Please try again later.",
+  "discord_error": "Discord could not update your role or nickname. Your link is saved. Ask an administrator to check the bot permissions and role hierarchy, then use /resync.",
+  "error": "The operation could not be completed. Please try again or contact an administrator.",
+  "wrong_server": "This bot is only available in its configured server.",
+  "admin_only": "Only server administrators can use this command.",
+  "setup_done": "The verification panel has been posted.",
+  "rejoined": "Your player role has been restored. Run /resync in the server to refresh your World of Tanks nickname.",
+  "confirm_unlink": "Run /unlink confirm:True to remove your player role and account link.",
+  "bad_target": "Provide exactly one Discord user ID or Wargaming account ID.",
+  "not_ready": "The bot is starting. Please try again shortly."
+}
