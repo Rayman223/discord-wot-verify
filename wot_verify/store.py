@@ -129,6 +129,12 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM clan_tag_state WHERE discord_id=?", (discord_id,))
 
+    def confirm_tag(self, discord_id, suffix):
+        """Only the most recently confirmed Discord nickname remains managed."""
+        with self.db:
+            self.db.execute("DELETE FROM clan_tag_state WHERE discord_id=?", (discord_id,))
+            self.db.execute("INSERT INTO clan_tag_state VALUES (?, ?)", (discord_id, suffix))
+
     def due(self):
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)

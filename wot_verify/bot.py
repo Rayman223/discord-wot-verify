@@ -14,6 +14,7 @@ from .store import Store
 from .wargaming import CONTACT_RANKS, Wargaming
 
 log = logging.getLogger(__name__)
+DISCORD_IO_ERRORS = (discord.HTTPException, aiohttp.ClientError, OSError)
 
 
 class LoginView(discord.ui.View):
@@ -43,7 +44,7 @@ class LoginView(discord.ui.View):
             message = t("clan_success")
         except ValueError as exc:
             message = t(str(exc))
-        except discord.HTTPException:
+        except DISCORD_IO_ERRORS:
             message = t("clan_discord_error")
         await interaction.followup.send(message, ephemeral=True)
 
@@ -122,21 +123,26 @@ class VerifyBot(discord.Client):
     async def sync(self, row):
         member = await self.member(row["discord_id"])
         nickname = await self.wg.nickname(row["account_id"])
+        suffix = ""
         is_contact = self.store.contact(row["discord_id"]) and any(
             role.id == getattr(self.config, "clan_role_id", 0) for role in member.roles
         )
         if is_contact:
+            base_nickname = nickname
             nickname = await self.contact_nickname(row, nickname)
-            self.store.remember_tag(member.id, re.search(r" \[[^]]+\]$", nickname)[0])
+            suffix = nickname[len(base_nickname) :]
+            self.store.remember_tag(member.id, suffix)
         await member.add_roles(self.role(member), reason="Wargaming account verification")
         try:
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
         except discord.Forbidden:
             raise ValueError("nickname_blocked") from None
-        except discord.HTTPException:
+        except DISCORD_IO_ERRORS:
             raise ValueError("nickname_error") from None
-        if not is_contact:
+        if is_contact:
+            self.store.confirm_tag(member.id, suffix)
+        else:
             self.store.clear_tags(member.id)
         self.store.mark_synced(member.id, nickname)
 
@@ -207,10 +213,11 @@ class VerifyBot(discord.Client):
         try:
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Clan contact nickname")
-        except discord.HTTPException:
+        except DISCORD_IO_ERRORS:
             raise ValueError("clan_nickname_error") from None
+        self.store.confirm_tag(discord_id, f" [{membership[2]}]")
 
-    async def remove_contact(self, discord_id, member=None):
+    async def remove_contact(self, discord_id, member=None, *, was_contact=False):
         contact = self.store.contact(discord_id)
         if (
             not getattr(self.config, "clan_role_id", 0)
@@ -228,7 +235,11 @@ class VerifyBot(discord.Client):
             has_role = any(role.id == role_id for role in member.roles)
             # Support contacts created before tag tracking, but never infer a tag
             # from the nickname of someone who is not a contact.
-            if (contact or has_role) and not self.store.contact_tags(discord_id) and member.nick:
+            if (
+                (has_role or (was_contact and contact is not None))
+                and not self.store.contact_tags(discord_id)
+                and member.nick
+            ):
                 suffix = re.search(r" \[[A-Za-z0-9_-]{2,5}\]$", member.nick)
                 if suffix:
                     self.store.remember_tag(discord_id, suffix[0])
@@ -243,7 +254,7 @@ class VerifyBot(discord.Client):
                             nick=member.nick[: -len(suffix)] or None,
                             reason="Clan contact tag removed",
                         )
-                    except discord.HTTPException:
+                    except DISCORD_IO_ERRORS:
                         log.warning("Clan tag cleanup pending for Discord member %s", discord_id)
                         return False
                     break
@@ -272,10 +283,10 @@ class VerifyBot(discord.Client):
                     and self.config.role_id not in roles
                     and (role_id in old or self.store.contact(after.id))
                 ) or (contact_removed and role_id not in roles):
-                    await self.remove_contact(after.id, member)
+                    await self.remove_contact(after.id, member, was_contact=role_id in old)
             except discord.NotFound:
                 self.store.release_contact(after.id)
-            except (discord.HTTPException, ValueError):
+            except (*DISCORD_IO_ERRORS, ValueError):
                 log.warning("Clan contact cleanup failed for Discord member %s", after.id)
 
     async def remove(self, discord_id):

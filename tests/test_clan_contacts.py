@@ -287,6 +287,93 @@ async def test_cleanup_preserves_user_changed_suffix(bot):
     member.edit.assert_not_awaited()
 
 
+async def test_unlink_with_reservation_only_preserves_custom_suffix(bot):
+    client, member = bot
+    client.store.reserve_contact(10, "eu", 42)  # Unknown grant, no confirmed role or tag.
+    member.nick = "Custom [ALT]"
+    client.role = lambda _: "player-role"
+    await client.remove(10)
+    member.edit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("operation", ["sync", "claim"])
+async def test_successful_tag_change_forgets_old_suffix(bot, operation):
+    client, member = bot
+    await client.claim_contact(10)
+    client.wg.clan_membership.return_value = (42, "commander", "NEW")
+    client.role = lambda _: "player-role"
+    if operation == "sync":
+        await client.sync(client.store.get(10))
+    else:
+        await client.claim_contact(10)
+    assert client.store.contact_tags(10) == [" [NEW]"]
+    member.nick = "Custom [TAG]"
+    member.edit.reset_mock()
+    await client.remove_contact(10)
+    member.edit.assert_not_awaited()
+
+
+async def test_unlink_survives_nickname_transport_timeout(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    member.nick = "Player [TAG]"
+    member.edit.side_effect = TimeoutError()
+    client.role = lambda _: "player-role"
+    assert await client.remove(10) is False
+    assert client.store.get(10) is None
+    assert client.store.contact(10) is None
+    assert client.store.contact_tags(10) == [" [TAG]"]
+
+
+async def test_contact_button_handles_unknown_discord_result(bot):
+    client, _ = bot
+    client.claim_contact = AsyncMock(side_effect=TimeoutError())
+    interaction = SimpleNamespace(
+        guild_id=1,
+        user=SimpleNamespace(id=10),
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    await LoginView(client).clan_contact(interaction)
+    interaction.followup.send.assert_awaited_once()
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+
+
+async def test_manual_removal_of_legacy_contact_cleans_tag(bot):
+    client, member = bot
+    client.store.reserve_contact(10, "eu", 42)
+    member.nick = "Player [TAG]"
+    before = SimpleNamespace(roles=[SimpleNamespace(id=2), SimpleNamespace(id=3)])
+    after = SimpleNamespace(id=10, guild=SimpleNamespace(id=1), roles=member.roles)
+    await client.on_member_update(before, after)
+    assert member.edit.await_args.kwargs["nick"] == "Player"
+    assert client.store.contact(10) is None
+
+
+async def test_unknown_role_grant_keeps_slot_without_attempting_rename(bot):
+    client, member = bot
+    member.add_roles.side_effect = TimeoutError()
+    with pytest.raises(TimeoutError):
+        await client.claim_contact(10)
+    assert client.store.contact(10)
+    member.edit.assert_not_awaited()
+
+
+async def test_queued_bot_role_event_does_not_strip_another_suffix(bot):
+    client, member = bot
+    await client.claim_contact(10)
+    before = SimpleNamespace(roles=list(member.roles))
+    member.nick = "Custom [ALT] [TAG]"
+    await client.remove_contact(10)
+    member.nick = "Custom [ALT]"
+    member.roles = [SimpleNamespace(id=2)]
+    member.edit.reset_mock()
+    await client.on_member_update(
+        before, SimpleNamespace(id=10, guild=SimpleNamespace(id=1), roles=member.roles)
+    )
+    member.edit.assert_not_awaited()
+
+
 def test_unique_contact_survives_restart_and_can_be_released(tmp_path):
     path = str(tmp_path / "contacts.sqlite3")
     first = Store(path)
