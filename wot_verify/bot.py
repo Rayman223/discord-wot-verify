@@ -153,6 +153,25 @@ class VerifyBot(discord.Client):
                 await self.audit.emit("sync_failed", row["discord_id"])
             raise
 
+    async def sync_visitor_role(self, member, *, player):
+        role_id = getattr(self.config, "visitor_role_id", 0)
+        if not role_id:
+            return
+        role = member.guild.get_role(role_id)
+        if (
+            role is None
+            or role.is_default()
+            or role.managed
+            or role.permissions.administrator
+            or role_id in {self.config.role_id, getattr(self.config, "clan_role_id", 0)}
+        ):
+            raise ValueError("discord_error")
+        has_visitor = any(current.id == role_id for current in member.roles)
+        if player and has_visitor:
+            await member.remove_roles(role, reason="Player role replaces visitor role")
+        elif not player and not has_visitor:
+            await member.add_roles(role, reason="Visitor role restored after player role removal")
+
     async def _sync(self, row, member):
         nickname = await self.wg.nickname(row["account_id"])
         suffix = ""
@@ -165,6 +184,7 @@ class VerifyBot(discord.Client):
             suffix = nickname[len(base_nickname) :]
             self.store.remember_tag(member.id, suffix)
         await member.add_roles(self.role(member), reason="Wargaming account verification")
+        await self.sync_visitor_role(member, player=True)
         try:
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
@@ -320,19 +340,25 @@ class VerifyBot(discord.Client):
         if after.guild.id != self.config.guild_id:
             return
         role_id = getattr(self.config, "clan_role_id", 0)
-        if not role_id:
+        if not role_id and not getattr(self.config, "visitor_role_id", 0):
             return
         old = {role.id for role in before.roles}
         new = {role.id for role in after.roles}
         player_removed = self.config.role_id in old - new
+        player_changed = self.config.role_id in old ^ new
         contact_removed = role_id in old - new
-        if not player_removed and not contact_removed:
+        if not player_changed and not contact_removed:
             return
         async with self.lock:
             try:
                 # Gateway events may be queued: never act on a stale member snapshot.
                 member = await self.member(after.id)
                 roles = {role.id for role in member.roles}
+                if player_changed:
+                    try:
+                        await self.sync_visitor_role(member, player=self.config.role_id in roles)
+                    except (*DISCORD_IO_ERRORS, ValueError):
+                        log.warning("Visitor role update failed for Discord member %s", after.id)
                 if (
                     player_removed
                     and self.config.role_id not in roles
@@ -340,7 +366,10 @@ class VerifyBot(discord.Client):
                 ) or (contact_removed and role_id not in roles):
                     await self.remove_contact(after.id, member, was_contact=role_id in old)
             except discord.NotFound:
-                self.store.release_contact(after.id)
+                # A queued player-addition event may outlive the member's stay.
+                # Departure alone must not free an existing clan reservation.
+                if player_removed or contact_removed:
+                    self.store.release_contact(after.id)
             except (*DISCORD_IO_ERRORS, ValueError):
                 log.warning("Clan contact cleanup failed for Discord member %s", after.id)
 
@@ -355,6 +384,7 @@ class VerifyBot(discord.Client):
         if member:
             cleaned = await self.remove_contact(discord_id, member)
             await member.remove_roles(self.role(member), reason="Wargaming account unlinked")
+            await self.sync_visitor_role(member, player=False)
         else:
             self.store.clear_tags(discord_id)
         self.store.unlink(discord_id)
@@ -370,9 +400,15 @@ class VerifyBot(discord.Client):
                 return
             try:
                 await member.add_roles(self.role(member), reason="Restore verified player role")
-            except (discord.HTTPException, ValueError):
+            except (*DISCORD_IO_ERRORS, ValueError):
                 log.warning("Could not restore role for Discord member %s", member.id)
                 return
+            try:
+                await self.sync_visitor_role(member, player=True)
+            except (*DISCORD_IO_ERRORS, ValueError):
+                log.warning(
+                    "Visitor role cleanup failed on rejoin for Discord member %s", member.id
+                )
             try:
                 await member.send(self.t("rejoined"))
             except discord.HTTPException:

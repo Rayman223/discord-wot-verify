@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -70,6 +70,25 @@ def env(tmp_path, request):
     )
     yield bot, member, roles, interaction
     bot.store.close()
+
+
+@pytest.mark.parametrize("state", ["ok", "missing", "hierarchy", "admin"])
+def test_diagnose_visitor_role(env, state):
+    bot, _, roles, interaction = env
+    bot.config = replace(bot.config, visitor_role_id=4)
+    if state != "missing":
+        roles[4] = Role(20 if state == "hierarchy" else 4, 4)
+        if state == "admin":
+            roles[4].permissions = discord.Permissions(administrator=True)
+    report = diagnose_report(bot, interaction)
+    visitor = next(f for f in report.fields if f.name == bot.t("status_visitor_role"))
+    expected = {
+        "ok": "diagnose_ok",
+        "missing": "diagnose_role_missing",
+        "hierarchy": "diagnose_role_hierarchy",
+        "admin": "diagnose_role_invalid",
+    }[state]
+    assert visitor.value == f"4 · {bot.t(expected)}"
 
 
 def values(report):
