@@ -12,6 +12,8 @@ Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouto
 
 | Commande | Accès | Effet |
 | --- | --- | --- |
+| `/status` | Membre | Affiche en privé son compte lié, son clan actuel et l’état des rôles et du pseudo, sans modification. |
+| `/diagnose` | Administrateur | Vérifie en privé les rôles configurés, la hiérarchie et les permissions du bot et du salon. |
 | `/setup` | Administrateur | Poste le panneau dans le salon courant. |
 | `/resync` | Membre | Actualise rôle et pseudo ; une demande par minute. |
 | `/unlink confirm:True` | Membre | Retire le rôle et la liaison ; conserve le pseudo actuel. |
@@ -20,6 +22,10 @@ Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouto
 | `/admin_contact_remove discord_id:…` | Manage Roles | Retire le contact de clan et libère la place après vérification manuelle. |
 
 Le second bouton **Become a clan contact** vérifie les grades de commandant, commandant en second ou officier de recrutement, attribue un rôle distinct et applique le pseudo `PseudoWG [TAG]`. Un seul contact est autorisé par clan ; un second candidat est orienté vers un modérateur pour vérification manuelle. Activer avec `CLAN_CONTACT_ROLE_ID` dans `.env`, puis publier le panneau avec `/setup`. Voir le [guide des contacts de clan](docs/clan-contacts.md) pour la configuration et les limites.
+
+`/status` consulte uniquement le compte du membre qui lance la commande, avec une limite d’une demande par 30 secondes. Le pseudo enregistré et la date de dernière synchronisation sont distingués des informations Wargaming actuelles. Une panne Wargaming est indiquée comme une information indisponible, jamais comme une absence de clan. Les écarts proposent `/resync` ou une revue par un modérateur ; aucune correction n’est automatique.
+
+`/diagnose` est réservé aux administrateurs, avec contrôle à l’exécution. Il vérifie les permissions **Manage Roles** et **Manage Nicknames**, les rôles joueur/contact (existence, sécurité, hiérarchie) et les permissions **Read Message History**, **View Channel** / **Send Messages** du salon courant (ou **Send Messages in Threads** dans un fil). Le rôle contact désactivé est signalé comme facultatif. Les permissions des autres salons et la position de chaque membre ne sont pas inspectées ; le diagnostic explique les limites de renommage Discord. Aucun secret ni lien de connexion n’est affiché. Après déploiement, les deux nouvelles commandes sont synchronisées automatiquement au démarrage ; aucune nouvelle variable ou migration n’est nécessaire.
 
 Les identifiants des commandes administrateur sont saisis en texte pour éviter les arrondis sur les grands IDs Discord. Donner exactement l'un des deux paramètres. Les permissions sont vérifiées à l'exécution, en plus des restrictions d'affichage des commandes. Un administrateur peut libérer une liaison même après le départ ou le bannissement du membre. Si le membre est présent et que le retrait du rôle échoue, la liaison est conservée pour permettre une nouvelle tentative.
 
