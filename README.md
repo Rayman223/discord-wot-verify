@@ -1,6 +1,10 @@
 # WoT Verify
 
+<img src="assets/branding/wot-verify-avatar.png" alt="Logo WoT Verify : char et coche de vérification" width="160" height="160">
+
 Bot Discord indépendant de Battle-Conquest : vérification d'un compte World of Tanks PC EU, attribution du rôle existant **joueur** et synchronisation du pseudo. Interface disponible en anglais et en français, configurable avec `LOCALE=en` (par défaut) ou `LOCALE=fr`. Les messages sont centralisés dans `wot_verify/locales/`.
+
+Le [logo du bot](assets/branding/wot-verify-avatar.png) est prêt à être importé comme avatar Discord. Voir les [instructions d’installation du logo](assets/branding/README.md).
 
 ## Fonctionnement
 
