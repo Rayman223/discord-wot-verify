@@ -68,10 +68,20 @@ class VerificationNotices:
             or getattr(getattr(channel, "guild", None), "id", None) != self.bot.config.guild_id
         ):
             raise ValueError("Invalid verification channel")
+        role = channel.guild.get_role(role_id)
+        role_name = (
+            role.name
+            if role is not None
+            else self.bot.t(
+                "status_contact_role"
+                if role_id == self.bot.config.clan_role_id
+                else "status_player_role"
+            )
+        )
         await channel.send(
             self.bot.t(key).format(
                 member=f"<@{discord_id}>",
-                role=f"<@&{role_id}>",
+                role=discord.utils.escape_markdown(role_name.replace("@", "")),
                 clan_tag=discord.utils.escape_markdown(clan_tag),
             ),
             allowed_mentions=discord.AllowedMentions(
@@ -80,4 +90,5 @@ class VerificationNotices:
                 everyone=False,
                 replied_user=False,
             ),
+            delete_after=30,
         )
