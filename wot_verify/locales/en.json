@@ -88,5 +88,7 @@
   "diagnose_grant_send": "Missing: allow the bot to send messages here (or in threads for a thread).",
   "diagnose_nickname_hierarchy": "Nickname hierarchy limits",
   "diagnose_nickname_hint": "To rename a member, the bot’s highest role must be strictly above that member’s highest role. Discord prevents renaming the server owner. A valid account link and player role can be kept even when renaming is blocked.",
-  "command_cooldown": "Please wait a moment before running this command again."
+  "command_cooldown": "Please wait a moment before running this command again.",
+  "diagnose_read_history": "Read Message History permission (current channel)",
+  "diagnose_grant_history": "Missing: allow Read Message History in this channel so /setup can retrieve and update the saved verification panel."
 }

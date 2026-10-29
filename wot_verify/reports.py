@@ -168,6 +168,11 @@ def diagnose_report(bot, interaction):
     else:
         channel_permissions = channel.permissions_for(me)
         check("diagnose_view_channel", channel_permissions.view_channel, "diagnose_grant_view")
+        check(
+            "diagnose_read_history",
+            channel_permissions.read_message_history,
+            "diagnose_grant_history",
+        )
         can_send = (
             channel_permissions.send_messages_in_threads
             if isinstance(channel, discord.Thread)

@@ -278,3 +278,14 @@ async def test_cooldown_explains_wait_instead_of_admin_permissions(env):
     error = app_commands.CommandOnCooldown(app_commands.Cooldown(1, 30), 20)
     await bot.tree.on_error(interaction, error)
     interaction.followup.send.assert_awaited_once_with(bot.t("command_cooldown"), ephemeral=True)
+
+
+@pytest.mark.parametrize("can_read", [True, False])
+def test_diagnose_checks_read_history_for_saved_panel(env, can_read):
+    bot, _, _, interaction = env
+    interaction.channel.permissions_for = lambda _: discord.Permissions(
+        view_channel=True, send_messages=True, read_message_history=can_read
+    )
+    report = diagnose_report(bot, interaction)
+    field = next(f for f in report.fields if f.name == bot.t("diagnose_read_history"))
+    assert field.value == bot.t("diagnose_ok" if can_read else "diagnose_grant_history")
