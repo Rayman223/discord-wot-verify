@@ -106,3 +106,24 @@ async def test_matching_nickname_needs_no_edit(bot):
     await bot.sync(bot.store.get(1))
     member.edit.assert_not_awaited()
     assert bot.store.get(1)["synced_at"] > 0
+
+
+async def test_failed_syncs_alert_once_and_success_resets_counter(bot):
+    bot.store.link(1, "eu", 10, "Player")
+    row = bot.store.get(1)
+    error = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "")
+    bot.member = AsyncMock(side_effect=error)
+    bot.audit.emit = AsyncMock()
+    for _ in range(3):
+        with pytest.raises(discord.Forbidden):
+            await bot.sync(row)
+    bot.audit.emit.assert_awaited_once_with("sync_failed", 1)
+    bot.member.side_effect = None
+    bot.member.return_value = SimpleNamespace(id=1, nick="Player", add_roles=AsyncMock())
+    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.role = lambda _: "role"
+    await bot.sync(row)
+    bot.member.side_effect = error
+    with pytest.raises(discord.Forbidden):
+        await bot.sync(row)
+    bot.audit.emit.assert_awaited_once_with("sync_failed", 1)

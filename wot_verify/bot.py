@@ -136,6 +136,14 @@ class VerifyBot(discord.Client):
         return role
 
     async def sync(self, row):
+        try:
+            await self._sync(row)
+        except (*DISCORD_IO_ERRORS, ValueError):
+            if self.store.sync_failure_notice(row["discord_id"], int(time.time())):
+                await self.audit.emit("sync_failed", row["discord_id"])
+            raise
+
+    async def _sync(self, row):
         member = await self.member(row["discord_id"])
         nickname = await self.wg.nickname(row["account_id"])
         suffix = ""
@@ -354,8 +362,6 @@ class VerifyBot(discord.Client):
                     await self.sync(current)
                 except (*DISCORD_IO_ERRORS, ValueError):
                     log.warning("Periodic sync failed for Discord member %s", row["discord_id"])
-                    if self.store.sync_failure_notice(row["discord_id"], int(time.time())):
-                        await self.audit.emit("sync_failed", row["discord_id"])
             await asyncio.sleep(1)
 
     @monthly_sync.before_loop
