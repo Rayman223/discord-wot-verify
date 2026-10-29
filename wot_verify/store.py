@@ -140,6 +140,16 @@ class Store:
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
 
+    def contacts_page(self, page, size=5):
+        total = self.db.execute("SELECT count(*) FROM clan_contacts").fetchone()[0]
+        rows = self.db.execute(
+            "SELECT c.*, l.account_id FROM clan_contacts c LEFT JOIN links l "
+            "ON l.discord_id=c.discord_id AND l.region=c.region "
+            "ORDER BY c.discord_id LIMIT ? OFFSET ?",
+            (size, (page - 1) * size),
+        ).fetchall()
+        return total, rows
+
     def panel(self, guild_id):
         return self.db.execute(
             "SELECT * FROM verification_panel WHERE guild_id=?", (guild_id,)

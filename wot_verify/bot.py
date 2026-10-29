@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
+from .contacts import register_contacts_command
 from .i18n import t
 from .openid import OpenID
 from .panel import update_panel
@@ -83,6 +84,7 @@ class VerifyBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.runner = None
         self.register_commands()
+        register_contacts_command(self)
 
     def t(self, key):
         return t(key, getattr(self.config, "locale", "en"))
@@ -441,6 +443,8 @@ class VerifyBot(discord.Client):
                 message = self.t(str(original))
             elif isinstance(original, discord.HTTPException):
                 message = self.t("discord_error")
+            elif isinstance(original, app_commands.CommandOnCooldown):
+                message = self.t("command_cooldown")
             elif isinstance(original, app_commands.CheckFailure):
                 message = self.t("admin_only")
             else:

@@ -26,6 +26,7 @@ def test_persistent_view_and_commands(bot):
     assert LoginView(bot).is_persistent()
     assert {c.name for c in bot.tree.get_commands()} == {
         "setup",
+        "contacts",
         "resync",
         "unlink",
         "admin_unlink",

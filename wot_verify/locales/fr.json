@@ -47,5 +47,21 @@
   "command_admin_unlink": "Supprimer une liaison par identifiant Discord ou Wargaming",
   "panel_updated": "Le panneau de vérification a été actualisé.",
   "panel_elsewhere": "Le panneau de vérification existe déjà dans <#{channel_id}>. Lancez /setup dans ce salon. Pour le déplacer, supprimez d’abord l’ancien message.",
-  "panel_inaccessible": "Le panneau enregistré ne peut pas être vérifié. Rétablissez l’accès du bot et la permission Voir les anciens messages avant de réessayer ; aucun doublon n’a été publié."
+  "panel_inaccessible": "Le panneau enregistré ne peut pas être vérifié. Rétablissez l’accès du bot et la permission Voir les anciens messages avant de réessayer ; aucun doublon n’a été publié.",
+  "command_contacts": "Examiner les contacts de clan enregistrés sans les modifier",
+  "command_cooldown": "Veuillez patienter quelques instants avant de relancer cette commande.",
+  "contacts_title": "Revue des contacts de clan",
+  "contacts_read_only": "Consultation uniquement. Les réservations sont conservées ; utiliser /admin_contact_remove après vérification manuelle.",
+  "contacts_page": "Page {page}/{pages} · {total} contacts",
+  "contacts_empty": "Aucun contact de clan enregistré.",
+  "contacts_bad_page": "Cette page n’existe pas. Utilisez /contacts page:1.",
+  "contacts_identity": "Clan réservé : {clan_id} ({region}) · WoT : {account_id}",
+  "contacts_left": "Membre absent du serveur — vérification manuelle nécessaire.",
+  "contacts_discord_unknown": "Informations Discord indisponibles — état inconnu.",
+  "contacts_wg_unknown": "Informations Wargaming indisponibles — éligibilité inconnue.",
+  "contacts_roles_missing": "Rôle joueur ou contact absent — vérification manuelle nécessaire.",
+  "contacts_no_link": "Liaison de compte absente — vérification manuelle nécessaire.",
+  "contacts_clan_changed": "Clan absent ou modifié — vérification manuelle nécessaire.",
+  "contacts_rank_lost": "Grade actuel non éligible — vérification manuelle nécessaire.",
+  "contacts_ok": "Aucun écart détecté."
 }
