@@ -44,5 +44,8 @@
   "command_setup": "Publier le panneau de vérification Wargaming dans ce salon",
   "command_resync": "Actualiser votre rôle joueur et votre pseudo World of Tanks",
   "command_unlink": "Supprimer votre liaison de compte et votre rôle joueur",
-  "command_admin_unlink": "Supprimer une liaison par identifiant Discord ou Wargaming"
+  "command_admin_unlink": "Supprimer une liaison par identifiant Discord ou Wargaming",
+  "panel_updated": "Le panneau de vérification a été actualisé.",
+  "panel_elsewhere": "Le panneau de vérification existe déjà dans <#{channel_id}>. Lancez /setup dans ce salon. Pour le déplacer, supprimez d’abord l’ancien message.",
+  "panel_inaccessible": "Le panneau enregistré ne peut pas être vérifié. Rétablissez l’accès du bot et la permission Voir les anciens messages avant de réessayer ; aucun doublon n’a été publié."
 }

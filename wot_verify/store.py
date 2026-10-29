@@ -140,5 +140,18 @@ class Store:
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
 
+    def panel(self, guild_id):
+        return self.db.execute(
+            "SELECT * FROM verification_panel WHERE guild_id=?", (guild_id,)
+        ).fetchone()
+
+    def save_panel(self, guild_id, channel_id, message_id):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO verification_panel VALUES (?, ?, ?) "
+                "ON CONFLICT(guild_id) DO UPDATE SET channel_id=excluded.channel_id, message_id=excluded.message_id",
+                (guild_id, channel_id, message_id),
+            )
+
     def close(self):
         self.db.close()

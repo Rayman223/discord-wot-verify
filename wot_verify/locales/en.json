@@ -44,5 +44,8 @@
   "command_setup": "Post the Wargaming verification panel in this channel",
   "command_resync": "Refresh your player role and World of Tanks nickname",
   "command_unlink": "Remove your account link and player role",
-  "command_admin_unlink": "Remove a link by Discord user ID or Wargaming account ID"
+  "command_admin_unlink": "Remove a link by Discord user ID or Wargaming account ID",
+  "panel_updated": "The verification panel has been updated.",
+  "panel_elsewhere": "The verification panel already exists in <#{channel_id}>. Run /setup there. To move it, delete the old message first.",
+  "panel_inaccessible": "The saved panel cannot be checked. Restore the bot’s access and Read Message History permission before retrying; no duplicate was posted."
 }

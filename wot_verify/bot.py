@@ -9,6 +9,7 @@ from discord.ext import tasks
 
 from .i18n import t
 from .openid import OpenID
+from .panel import update_panel
 from .security import States
 from .store import Store
 from .wargaming import CONTACT_RANKS, Wargaming
@@ -379,8 +380,9 @@ class VerifyBot(discord.Client):
         @app_commands.checks.has_permissions(administrator=True)
         async def setup(interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True)
-            await interaction.channel.send(self.t("panel"), view=LoginView(self))
-            await interaction.followup.send(self.t("setup_done"), ephemeral=True)
+            async with self.lock:
+                message = await update_panel(self, interaction.channel, LoginView(self))
+            await interaction.followup.send(message, ephemeral=True)
 
         @self.tree.command(description=self.t("command_resync"))
         @app_commands.guild_only()
