@@ -136,15 +136,19 @@ class VerifyBot(discord.Client):
         return role
 
     async def sync(self, row):
+        member = None
         try:
-            await self._sync(row)
-        except (*DISCORD_IO_ERRORS, ValueError):
-            if self.store.sync_failure_notice(row["discord_id"], int(time.time())):
+            member = await self.member(row["discord_id"])
+            await self._sync(row, member)
+        except (*DISCORD_IO_ERRORS, ValueError) as exc:
+            if member is None and isinstance(exc, discord.NotFound):
+                # Retained links for departed members are normal, not incidents.
+                self.store.clear_sync_failures(row["discord_id"])
+            elif self.store.sync_failure_notice(row["discord_id"], int(time.time())):
                 await self.audit.emit("sync_failed", row["discord_id"])
             raise
 
-    async def _sync(self, row):
-        member = await self.member(row["discord_id"])
+    async def _sync(self, row, member):
         nickname = await self.wg.nickname(row["account_id"])
         suffix = ""
         is_contact = self.store.contact(row["discord_id"]) and any(

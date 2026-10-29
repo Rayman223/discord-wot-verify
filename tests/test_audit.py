@@ -80,3 +80,38 @@ def test_repeated_failures_are_throttled_across_restart(tmp_path):
     db.unlink(7)
     assert db.db.execute("SELECT count(*) FROM audit_failures").fetchone()[0] == 0
     db.close()
+
+
+@pytest.mark.parametrize(
+    "kind", ["moderator", "ordinary", "departed", "forbidden", "timeout", "role", "deleted_role"]
+)
+async def test_journal_resolves_uncached_permission_targets_without_weakening_privacy(env, kind):
+    bot, channel = env
+    target_type = discord.Role if kind in {"role", "deleted_role"} else discord.User
+    channel.overwrites = {
+        discord.Object(id=123, type=target_type): discord.PermissionOverwrite(view_channel=True)
+    }
+    member = Mock(spec=discord.Member)
+    member.id = 123
+    member.guild_permissions = discord.Permissions(manage_roles=kind == "moderator")
+    channel.guild.fetch_member = AsyncMock(return_value=member)
+    role = Mock(spec=discord.Role)
+    role.id = 123
+    role.permissions = discord.Permissions(manage_roles=True)
+    role.is_bot_managed.return_value = False
+    channel.guild.fetch_roles = AsyncMock(return_value=[] if kind == "deleted_role" else [role])
+    if kind == "departed":
+        channel.guild.fetch_member.side_effect = discord.NotFound(
+            SimpleNamespace(status=404, reason=""), ""
+        )
+    elif kind == "forbidden":
+        channel.guild.fetch_member.side_effect = discord.Forbidden(
+            SimpleNamespace(status=403, reason=""), ""
+        )
+    elif kind == "timeout":
+        channel.guild.fetch_member.side_effect = TimeoutError()
+    await AuditJournal(bot).emit("linked", 7)
+    if kind in {"moderator", "departed", "role", "deleted_role"}:
+        channel.send.assert_awaited_once()
+    else:
+        channel.send.assert_not_awaited()

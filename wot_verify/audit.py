@@ -39,6 +39,9 @@ class AuditJournal:
         for target, overwrite in channel.overwrites.items():
             if overwrite.view_channel is not True:
                 continue
+            target = await self._resolve_target(guild, target)
+            if target is None:
+                continue
             if isinstance(target, discord.Role):
                 privileged = target.permissions.administrator or target.permissions.manage_roles
                 is_bot = (
@@ -59,3 +62,16 @@ class AuditJournal:
             f"<t:{int(time.time())}:F> · {self.bot.t('audit_' + event)} · Discord ID: {discord_id}",
             allowed_mentions=discord.AllowedMentions.none(),
         )
+
+    async def _resolve_target(self, guild, target):
+        """Resolve SDK cache placeholders; ignore only confirmed absent targets."""
+        if not isinstance(target, discord.Object):
+            return target
+        if target.type is discord.Role:
+            return next((role for role in await guild.fetch_roles() if role.id == target.id), None)
+        if target.type in {discord.User, discord.Member}:
+            try:
+                return await guild.fetch_member(target.id)
+            except discord.NotFound:
+                return None
+        raise TypeError("Unknown permission target")

@@ -127,3 +127,36 @@ async def test_failed_syncs_alert_once_and_success_resets_counter(bot):
     with pytest.raises(discord.Forbidden):
         await bot.sync(row)
     bot.audit.emit.assert_awaited_once_with("sync_failed", 1)
+
+
+async def test_departed_member_does_not_alert_and_keeps_link(bot):
+    bot.store.link(1, "eu", 10, "Player")
+    bot.store.sync_failure_notice(1, 100000)
+    bot.member = AsyncMock(side_effect=discord.NotFound(SimpleNamespace(status=404, reason=""), ""))
+    bot.audit.emit = AsyncMock()
+    for _ in range(3):
+        with pytest.raises(discord.NotFound):
+            await bot.sync(bot.store.get(1))
+    bot.audit.emit.assert_not_awaited()
+    assert bot.store.get(1) is not None
+    assert bot.store.db.execute("SELECT count(*) FROM audit_failures").fetchone()[0] == 0
+
+
+async def test_not_found_during_role_update_still_alerts(bot):
+    bot.store.link(1, "eu", 10, "Player")
+    bot.member = AsyncMock(
+        return_value=SimpleNamespace(
+            id=1,
+            nick="Player",
+            add_roles=AsyncMock(
+                side_effect=discord.NotFound(SimpleNamespace(status=404, reason=""), "")
+            ),
+        )
+    )
+    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.role = lambda _: "role"
+    bot.audit.emit = AsyncMock()
+    for _ in range(2):
+        with pytest.raises(discord.NotFound):
+            await bot.sync(bot.store.get(1))
+    bot.audit.emit.assert_awaited_once_with("sync_failed", 1)
