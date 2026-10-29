@@ -14,7 +14,7 @@ Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouto
 | --- | --- | --- |
 | `/setup` | Administrateur | Poste le panneau dans le salon courant. |
 | `/resync` | Membre | Actualise rôle et pseudo ; une demande par minute. |
-| `/unlink confirm:True` | Membre | Retire le rôle et la liaison ; conserve le pseudo actuel. |
+| `/unlink confirm:True` | Membre | Supprime la liaison et les rôles gérés ; retire le tag de contact si possible et conserve le reste du pseudo. |
 | `/admin_unlink discord_id:…` | Administrateur | Supprime une liaison à partir de l'ID Discord. |
 | `/admin_unlink account_id:…` | Administrateur | Supprime une liaison à partir de l'ID WoT. |
 | `/admin_contact_remove discord_id:…` | Manage Roles | Retire le contact de clan et libère la place après vérification manuelle. |
@@ -25,6 +25,90 @@ Le second bouton **Become a clan contact** vérifie les grades de commandant, co
 Les identifiants des commandes administrateur sont saisis en texte pour éviter les arrondis sur les grands IDs Discord. Donner exactement l'un des deux paramètres. Les permissions sont vérifiées à l'exécution, en plus des restrictions d'affichage des commandes. Un administrateur peut libérer une liaison même après le départ ou le bannissement du membre. Si le membre est présent et que le retrait du rôle échoue, la liaison est conservée pour permettre une nouvelle tentative.
 
 Un contrôle quotidien actualise les liaisons dont la dernière synchronisation réussie remonte à 30 jours ; les échecs sont retentés au contrôle suivant. Discord supprime les rôles d'un membre qui quitte le serveur : à son retour, le bot restaure le rôle et lui demande `/resync` par message privé. Si les MP sont fermés, la commande reste disponible dans le serveur. Les liaisons des membres absents sont conservées jusqu'à suppression explicite.
+
+## Utilisation et commandes
+
+Ce guide couvre les fonctionnalités des PR [#16](https://github.com/Rayman223/discord-wot-verify/pull/16) et [#17](https://github.com/Rayman223/discord-wot-verify/pull/17). `/status` et `/diagnose` nécessitent les changements de la PR #16 ; le panneau actualisable, `/contacts`, le journal et la nouvelle tentative web viennent de la PR #17.
+
+### Parcours d’un joueur
+
+1. Ouvrir le salon de vérification et cliquer sur **Se connecter avec Wargaming** (**Connect with Wargaming** en anglais).
+2. Ouvrir le lien privé reçu, valable dix minutes, puis se connecter à son propre compte sur le site de Wargaming. Le mot de passe n’est jamais saisi auprès du bot.
+3. Après validation, le bot enregistre la liaison, attribue le rôle **joueur** et applique le pseudo World of Tanks exact. La page de retour permet de rejoindre le salon Discord d’origine.
+4. Si le compte est lié mais que Discord refuse le rôle ou le pseudo, la liaison reste enregistrée. Le bouton **Réessayer la synchronisation** ou `/resync` permet une nouvelle tentative ; une erreur de permission ou de hiérarchie peut nécessiter un administrateur.
+
+Le bouton **Devenir contact de clan** (**Become a clan contact**) s’utilise après la liaison du compte et l’attribution du rôle joueur. Il est réservé aux commandants, commandants en second et officiers de recrutement. Il attribue le rôle de contact configuré et applique `PseudoWG [TAG]`. Une seule place est réservée par clan : si elle est déjà occupée, le bot demande une vérification manuelle par un modérateur, sans remplacer le contact. Ce bouton n’est pas une commande slash.
+
+### Règles communes
+
+Les commandes s’utilisent uniquement sur le serveur configuré, pas en message privé. Leurs réponses sont privées pour la personne qui les lance ; seul le panneau publié par `/setup` est visible aux membres ayant accès au salon. Les noms des commandes et paramètres restent identiques en français et en anglais.
+
+Dans les exemples ci-dessous, remplacer `<ID_DISCORD>` par l’identifiant numérique du membre et `<ID_WOT>` par celui du compte World of Tanks, sans les chevrons. Pour copier un ID Discord, activer **Paramètres utilisateur → Avancés → Mode développeur**, puis utiliser **Copier l’identifiant utilisateur** sur le membre. Il s’agit d’un identifiant, pas de son pseudo. Le rôle de modérateur ne suffit pas par son nom : la permission **Gérer les rôles** (**Manage Roles**) doit être accordée pour les commandes de contacts.
+
+### `/setup` — créer ou actualiser le panneau
+
+**Accès : administrateur. Paramètres : aucun.** Lancer `/setup` dans le salon de vérification. Le bot crée le panneau et mémorise son salon et son message ; les appels suivants dans ce salon actualisent le texte et les boutons, notamment après un changement de langue, même après un redémarrage.
+
+Depuis un autre salon, il indique où se trouve le panneau existant et n’en publie pas un second. Pour déplacer le panneau, supprimer l’ancien message puis lancer `/setup` dans le nouveau salon. Si l’ancien message est inaccessible, rétablir les permissions du bot, dont **Voir les anciens messages** (**Read Message History**). Lors du premier déploiement du suivi des panneaux, supprimer une fois l’ancien panneau non enregistré avant de lancer la commande.
+
+### `/status` — consulter sa vérification
+
+**Accès : tout membre. Paramètres : aucun. Limite : un appel par 30 secondes.** Affiche son compte lié, le dernier pseudo enregistré et la dernière synchronisation réussie, ainsi que le clan Wargaming actuel, les rôles présents, le pseudo Discord et le pseudo attendu.
+
+La commande propose `/resync` ou une revue par un modérateur selon les écarts constatés. Elle ne modifie rien et ne permet pas de consulter la liaison d’un autre membre. Un compte non lié est orienté vers le panneau. Une information Wargaming indisponible reste indiquée comme inconnue : elle ne signifie pas que le joueur a perdu son clan.
+
+### `/resync` — actualiser son rôle et son pseudo
+
+**Accès : tout membre ayant lié son compte. Paramètres : aucun. Limite : un appel par minute.** Relit le pseudo auprès de Wargaming, réattribue le rôle joueur si nécessaire et actualise le pseudo Discord. Pour un contact disposant encore de son rôle et d’une réservation cohérente avec son clan et son grade, le tag est également actualisé.
+
+Utiliser `/resync` après un changement de pseudo WoT, au retour sur le serveur ou après correction des permissions du bot. Cette commande ne change pas le compte lié. Si le statut de contact nécessite une revue manuelle, demander l’intervention d’un modérateur ; `/resync` ne remplace pas un contact et ne libère pas sa réservation.
+
+### `/unlink` — délier son compte
+
+**Accès : tout membre. Paramètre : `confirm`, booléen facultatif, faux par défaut.** Sans confirmation, `/unlink` rappelle la commande à utiliser sans effectuer de retrait. Pour confirmer, lancer `/unlink confirm:True` en sélectionnant la valeur vraie dans Discord.
+
+La confirmation supprime la liaison, le rôle joueur, l’éventuel rôle de contact et sa réservation. Elle conserve le pseudo de base et essaie de retirer uniquement le suffixe de clan géré par le bot. Elle ne restaure pas un ancien pseudo Discord. Les liens de vérification et sessions de nouvelle tentative associés sont invalidés. Le membre peut ensuite lier un autre compte avec le panneau.
+
+Si Discord refuse de retirer un rôle, la liaison est conservée pour permettre une nouvelle tentative. Si seul le retrait du tag échoue, la déliaison aboutit et un message demande à un modérateur de réessayer `/admin_contact_remove` après correction des permissions.
+
+### `/contacts` — examiner les contacts de clan
+
+**Accès : permission Gérer les rôles. Paramètre : `page`, entier à partir de 1, facultatif, 1 par défaut. Limite : un appel par 30 secondes.** `/contacts` ou `/contacts page:1` affiche les cinq premiers contacts ; `/contacts page:2` affiche la page suivante. Une page inexistante produit un message explicite.
+
+Chaque entrée contient l’ID Discord, le compte WoT, le clan réservé et, si disponible, le clan actuel. Le bot signale un membre parti, un rôle manquant, un changement de clan ou un grade devenu inéligible. Une panne Discord ou Wargaming est distinguée d’un changement confirmé. La commande ne modifie aucun rôle, tag, compte ou réservation : elle aide le modérateur à décider d’un éventuel retrait manuel.
+
+### `/admin_contact_remove` — retirer un contact de clan
+
+**Accès : permission Gérer les rôles. Paramètre obligatoire : `discord_id`.** Exemple : `/admin_contact_remove discord_id:<ID_DISCORD>`.
+
+Retire le rôle de contact, libère la place réservée et essaie de supprimer le suffixe de clan géré par le bot. La liaison Wargaming et le rôle joueur sont conservés. La commande accepte aussi l’ID d’un membre ayant quitté le serveur ou banni, afin de libérer sa réservation.
+
+Si le retrait du rôle échoue, la réservation reste en place. Si seul le nettoyage du pseudo échoue, le rôle et la réservation sont supprimés ; corriger les permissions puis relancer la même commande pour terminer le nettoyage. Le modérateur peut ensuite inviter le nouveau contact à utiliser le bouton du panneau.
+
+### `/admin_unlink` — supprimer une liaison à la demande d’un administrateur
+
+**Accès : administrateur. Paramètres facultatifs : `discord_id` et `account_id`, mais exactement l’un des deux doit être renseigné.** Utiliser soit `/admin_unlink discord_id:<ID_DISCORD>`, soit `/admin_unlink account_id:<ID_WOT>`. `account_id` désigne un compte WoT de la région configurée, pas un clan.
+
+Effectue la même déliaison que `/unlink` pour le membre ciblé, sans confirmation supplémentaire : retrait des rôles gérés, libération du contact, nettoyage du tag si possible et suppression de la liaison. Un membre absent ou banni peut être ciblé par son identifiant. Donner les deux paramètres, aucun paramètre, un identifiant invalide ou une liaison inexistante produit une erreur sans suppression. Les mêmes règles de conservation de la liaison en cas d’échec de retrait de rôle s’appliquent.
+
+### `/diagnose` — vérifier les permissions et la configuration
+
+**Accès : administrateur. Paramètres : aucun.** Affiche les permissions **Gérer les rôles** et **Gérer les pseudos** du bot, puis vérifie que les rôles joueur/contact existent, sont utilisables et sont placés sous son rôle le plus élevé. Un rôle contact non configuré est signalé comme une fonctionnalité désactivée.
+
+Dans le salon courant, vérifie **Voir le salon**, **Voir les anciens messages** et **Envoyer des messages** ; dans un fil, contrôle l’envoi dans les fils. Le rapport rappelle que le bot ne peut pas renommer le propriétaire du serveur ni un membre dont le rôle le plus élevé est au même niveau ou au-dessus du sien. Il ne vérifie pas tous les salons ou membres et ne teste pas le salon du journal à la place du salon courant. Il n’effectue aucune correction et n’affiche aucun secret.
+
+### Ce qui se passe automatiquement
+
+| Événement | Comportement |
+| --- | --- |
+| Dernière synchronisation réussie datant d’au moins 30 jours | Le contrôle quotidien tente d’actualiser le rôle et le pseudo. Les échecs sont retentés aux contrôles suivants. |
+| Le membre quitte le serveur | Sa liaison et une éventuelle réservation de contact sont conservées ; son absence ne déclenche pas d’alerte de synchronisation dans le journal modérateurs. |
+| Le membre revient | Le bot essaie de rétablir le rôle joueur et envoie un MP demandant `/resync`. Le rôle de contact n’est pas réattribué automatiquement. |
+| Le rôle joueur est retiré manuellement | Le bot retire aussi le rôle de contact, libère la réservation et nettoie le tag si possible. La liaison reste présente : le rôle joueur peut revenir lors d’une synchronisation. |
+| Le rôle de contact est retiré manuellement | Le bot libère la réservation et essaie de retirer le tag ; la liaison et le rôle joueur restent présents. |
+| Le joueur change de clan ou perd un grade éligible | Le bot ne révoque pas automatiquement le contact. `/contacts` et les contrôles de synchronisation orientent vers une revue manuelle. |
+
+Pour révoquer durablement la vérification, utiliser `/unlink` ou `/admin_unlink`, plutôt que retirer uniquement le rôle joueur. Les bannissements WoT ne sont pas détectés automatiquement : un administrateur décide quand supprimer la liaison.
 
 ## Installation / déploiement Unraid et SWAG
 
