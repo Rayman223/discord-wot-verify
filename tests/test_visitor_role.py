@@ -95,6 +95,21 @@ async def test_stale_player_removal_keeps_current_player_and_removes_visitor(env
     assert role_ids(member) == {2}
 
 
+async def test_departure_after_player_addition_preserves_clan_reservation(env):
+    bot, member, roles = env
+    bot.config = replace(bot.config, clan_role_id=3)
+    bot.store.reserve_contact(7, "eu", 42)
+    bot.member.side_effect = discord.NotFound(SimpleNamespace(status=404, reason=""), "")
+    # Restoring player on rejoin creates an addition event. The member leaves
+    # before this queued event can fetch them: this is not a contact withdrawal.
+    before = SimpleNamespace(roles=[])
+    after = SimpleNamespace(id=7, guild=member.guild, roles=[roles[2]])
+    await bot.on_member_update(before, after)
+    assert bot.store.contact(7) is not None
+    assert bot.store.clan_contact("eu", 42)["discord_id"] == 7
+    assert bot.store.get(7) is not None
+
+
 async def test_visitor_only_event_does_not_loop(env):
     bot, member, roles = env
     before = SimpleNamespace(roles=[roles[2], roles[4]])

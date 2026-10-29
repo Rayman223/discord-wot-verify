@@ -366,7 +366,10 @@ class VerifyBot(discord.Client):
                 ) or (contact_removed and role_id not in roles):
                     await self.remove_contact(after.id, member, was_contact=role_id in old)
             except discord.NotFound:
-                self.store.release_contact(after.id)
+                # A queued player-addition event may outlive the member's stay.
+                # Departure alone must not free an existing clan reservation.
+                if player_removed or contact_removed:
+                    self.store.release_contact(after.id)
             except (*DISCORD_IO_ERRORS, ValueError):
                 log.warning("Clan contact cleanup failed for Discord member %s", after.id)
 
