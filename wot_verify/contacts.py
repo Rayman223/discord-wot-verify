@@ -20,6 +20,7 @@ async def contacts_report(bot, page):
 
     async def review(row):
         messages = []
+        current_clan = None
         try:
             member = await bot.member(row["discord_id"])
         except discord.NotFound:
@@ -40,12 +41,18 @@ async def contacts_report(bot, page):
             except ValueError:
                 messages.append(bot.t("contacts_wg_unknown"))
             else:
+                if membership is not None:
+                    current_clan = bot.t("contacts_current_clan").format(
+                        tag=membership[2], clan_id=membership[0]
+                    )
                 if membership is None or membership[0] != row["clan_id"]:
                     messages.append(bot.t("contacts_clan_changed"))
                 elif membership[1] not in CONTACT_RANKS:
                     messages.append(bot.t("contacts_rank_lost"))
         if not messages:
             messages.append(bot.t("contacts_ok"))
+        if current_clan:
+            messages.insert(0, current_clan)
         identity = bot.t("contacts_identity").format(
             clan_id=row["clan_id"],
             region=row["region"].upper(),

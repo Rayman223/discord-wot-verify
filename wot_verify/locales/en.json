@@ -68,5 +68,11 @@
   "audit_unlinked": "Account unlinked",
   "audit_contact_added": "Clan contact confirmed",
   "audit_contact_removed": "Clan contact removed",
-  "audit_sync_failed": "Repeated synchronization failures — check /diagnose and the member’s hierarchy"
+  "audit_sync_failed": "Repeated synchronization failures — check /diagnose and the member’s hierarchy",
+  "retry_button": "Retry synchronization",
+  "retry_hint": "This action only updates your verified account. Up to three attempts within ten minutes, with 30 seconds between failed attempts. If the session expires, return to Discord and use /resync.",
+  "retry_wait": "Please wait 30 seconds after the previous attempt, then try again. You can also return to Discord.",
+  "retry_expired": "This synchronization session is invalid or expired. Return to Discord and use /resync.",
+  "retry_exhausted": "The account remains linked, but synchronization could not be completed within this session. Return to Discord, ask an administrator to check permissions if needed, then use /resync.",
+  "contacts_current_clan": "Current clan: [{tag}] · {clan_id}"
 }

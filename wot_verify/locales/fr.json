@@ -68,5 +68,11 @@
   "audit_unlinked": "Compte délié",
   "audit_contact_added": "Contact de clan confirmé",
   "audit_contact_removed": "Contact de clan retiré",
-  "audit_sync_failed": "Échecs répétés de synchronisation — vérifier /diagnose et la hiérarchie du membre"
+  "audit_sync_failed": "Échecs répétés de synchronisation — vérifier /diagnose et la hiérarchie du membre",
+  "retry_button": "Réessayer la synchronisation",
+  "retry_hint": "Cette action actualise uniquement votre compte vérifié. Trois essais maximum en dix minutes, avec 30 secondes entre les essais après un échec. Si la session expire, retournez sur Discord et utilisez /resync.",
+  "retry_wait": "Patientez 30 secondes après l’essai précédent, puis réessayez. Vous pouvez également retourner sur Discord.",
+  "retry_expired": "Cette session de synchronisation est invalide ou expirée. Retournez sur Discord et utilisez /resync.",
+  "retry_exhausted": "Le compte reste lié, mais la synchronisation n’a pas pu aboutir dans cette session. Retournez sur Discord, demandez si nécessaire à un administrateur de vérifier les permissions, puis utilisez /resync.",
+  "contacts_current_clan": "Clan actuel : [{tag}] · {clan_id}"
 }

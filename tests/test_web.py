@@ -16,7 +16,7 @@ from wot_verify.web import application
 async def env(tmp_path):
     store = Store(str(tmp_path / "test.sqlite3"))
     bot = SimpleNamespace(
-        config=SimpleNamespace(region="eu", guild_id=1),
+        config=SimpleNamespace(region="eu", guild_id=1, public_url="https://example.org"),
         store=store,
         states=States("x" * 32, 1, store),
         is_ready=lambda: True,
@@ -134,3 +134,124 @@ async def test_french_return_pages(env, key):
     assert t(key, "fr") in body
     assert "Retourner sur Discord" in body
     assert "https://discord.com/channels/1" in body
+
+
+async def retry_credentials(bot, client):
+    import re
+
+    bot.sync.side_effect = ValueError("nickname_error")
+    response = await invoke(bot, client, bot.states.issue(7, 42))
+    body = await response.text()
+    csrf = re.search("name='csrf' value='([^']+)'", body)[1]
+    cookie = response.cookies["wot_retry"].value
+    assert response.cookies["wot_retry"]["httponly"]
+    assert response.cookies["wot_retry"]["secure"]
+    assert "form-action 'self'" in response.headers["Content-Security-Policy"]
+    return cookie, csrf
+
+
+async def post_retry(bot, client, cookie, csrf, **kwargs):
+    return await client.post(
+        "/resync",
+        data=kwargs.pop("data", {"csrf": csrf}),
+        cookies={"wot_retry": cookie},
+        headers=kwargs.pop("headers", {"Origin": bot.config.public_url}),
+        **kwargs,
+    )
+
+
+async def test_retry_success_and_replay_are_bound_to_original_identity(env):
+    bot, client = env
+    cookie, csrf = await retry_credentials(bot, client)
+    bot.sync.side_effect = None
+    response = await post_retry(
+        bot, client, cookie, csrf, data={"csrf": csrf, "discord_id": "999", "account_id": "999"}
+    )
+    assert response.status == 200
+    assert "channels/1/42" in await response.text()
+    assert bot.sync.call_args.args[0]["discord_id"] == 7
+    assert response.cookies["wot_retry"]["max-age"] == "0"
+    assert (await post_retry(bot, client, cookie, csrf)).status == 400
+    assert bot.sync.await_count == 2
+    assert (await client.get("/resync")).status == 405
+
+
+@pytest.mark.parametrize("attack", ["origin", "missing_origin", "cookie", "csrf", "duplicate"])
+async def test_retry_rejects_cross_site_forged_or_duplicate_form(env, attack):
+    bot, client = env
+    cookie, csrf = await retry_credentials(bot, client)
+    options = {}
+    if attack == "origin":
+        options["headers"] = {"Origin": "https://evil.example"}
+    elif attack == "missing_origin":
+        options["headers"] = {}
+    elif attack == "cookie":
+        cookie = "forged"
+    elif attack == "csrf":
+        csrf = "forged"
+    else:
+        options["data"] = [("csrf", csrf), ("csrf", csrf)]
+    response = await post_retry(bot, client, cookie, csrf, **options)
+    assert response.status in {400, 403}
+    assert bot.sync.await_count == 1
+
+
+@pytest.mark.parametrize(
+    "invalid", ["expired", "unlinked", "changed_account", "unlinked_relinked", "region"]
+)
+async def test_retry_rejects_expired_or_replaced_link(env, invalid):
+    bot, client = env
+    cookie, csrf = await retry_credentials(bot, client)
+    if invalid == "expired":
+        bot.store.db.execute("UPDATE retry_sessions SET expires_at=0")
+        bot.store.db.commit()
+    elif invalid == "region":
+        bot.config.region = "com"
+    elif invalid == "changed_account":
+        bot.store.db.execute("UPDATE links SET account_id=20 WHERE discord_id=7")
+        bot.store.db.commit()
+    else:
+        bot.store.unlink(7)
+        if invalid == "unlinked_relinked":
+            bot.store.link(7, "eu", 10, "RealName")
+    assert (await post_retry(bot, client, cookie, csrf)).status == 400
+    assert bot.sync.await_count == 1
+
+
+async def test_retry_rotates_tokens_limits_attempts_and_keeps_original_expiry(env):
+    import re
+
+    bot, client = env
+    cookie, csrf = await retry_credentials(bot, client)
+    expiry = bot.store.db.execute("SELECT expires_at FROM retry_sessions").fetchone()[0]
+    for attempt in range(3):
+        previous_cookie, previous_csrf = cookie, csrf
+        response = await post_retry(bot, client, cookie, csrf)
+        assert response.status == 409
+        body = await response.text()
+        assert (await post_retry(bot, client, previous_cookie, previous_csrf)).status == 400
+        if attempt < 2:
+            csrf = re.search("name='csrf' value='([^']+)'", body)[1]
+            cookie = response.cookies["wot_retry"].value
+            assert cookie != previous_cookie and csrf != previous_csrf
+            assert (
+                bot.store.db.execute("SELECT expires_at FROM retry_sessions").fetchone()[0]
+                == expiry
+            )
+            assert (await post_retry(bot, client, cookie, csrf)).status == 429
+            bot.store.db.execute("UPDATE retry_sessions SET next_attempt=0")
+            bot.store.db.commit()
+        else:
+            assert "<form" not in body
+    assert bot.sync.await_count == 4
+
+
+async def test_concurrent_retry_executes_only_once(env):
+    bot, client = env
+    cookie, csrf = await retry_credentials(bot, client)
+    bot.sync.side_effect = None
+    responses = await asyncio.gather(
+        post_retry(bot, client, cookie, csrf), post_retry(bot, client, cookie, csrf)
+    )
+    assert sorted(response.status for response in responses) == [200, 400]
+    assert bot.sync.await_count == 2

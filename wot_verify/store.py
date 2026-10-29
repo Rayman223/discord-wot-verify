@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -86,6 +89,7 @@ class Store:
             self.db.execute("DELETE FROM challenges WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM links WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM retry_sessions WHERE discord_id=?", (discord_id,))
 
     def contact(self, discord_id):
         return self.db.execute(
@@ -140,6 +144,55 @@ class Store:
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
+
+    def issue_retry(
+        self, discord_id, region, account_id, channel_id, *, expires_at=None, attempts=0
+    ):
+        now = int(time.time())
+        cookie, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        expires_at = expires_at if expires_at is not None else now + 600
+        with self.db:
+            self.db.execute(
+                "DELETE FROM retry_sessions WHERE expires_at<=? OR discord_id=?", (now, discord_id)
+            )
+            self.db.execute(
+                "INSERT INTO retry_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    hashlib.sha256(cookie.encode()).hexdigest(),
+                    hashlib.sha256(csrf.encode()).hexdigest(),
+                    discord_id,
+                    region,
+                    account_id,
+                    channel_id,
+                    expires_at,
+                    now + 30 if attempts else now,
+                    attempts,
+                ),
+            )
+        return cookie, csrf, max(0, expires_at - now)
+
+    def consume_retry(self, cookie, csrf):
+        now = int(time.time())
+        if not 1 <= len(cookie) <= 128 or not 1 <= len(csrf) <= 128:
+            raise ValueError("invalid_state")
+        with self.db:
+            row = self.db.execute(
+                "SELECT * FROM retry_sessions WHERE cookie_hash=?",
+                (hashlib.sha256(cookie.encode()).hexdigest(),),
+            ).fetchone()
+            if (
+                row is None
+                or row["expires_at"] <= now
+                or row["attempts"] >= 3
+                or not hmac.compare_digest(
+                    row["csrf_hash"], hashlib.sha256(csrf.encode()).hexdigest()
+                )
+            ):
+                raise ValueError("invalid_state")
+            if row["next_attempt"] > now:
+                raise ValueError("retry_wait")
+            self.db.execute("DELETE FROM retry_sessions WHERE cookie_hash=?", (row["cookie_hash"],))
+            return row
 
     def sync_failure_notice(self, discord_id, now):
         with self.db:

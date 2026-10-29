@@ -14,3 +14,5 @@ p { font-size: 1rem; line-height: 1.7; color: #e2e8f0; }
 .button:hover { background: #e0e7ff; }
 .button:focus-visible { outline: 3px solid #fbbf24; outline-offset: 5px; }
 .hint { font-size: .95rem; margin-top: 24px; color: #cbd5e1; }
+
+button.button { font: inherit; font-weight: 700; border: 0; cursor: pointer; }
