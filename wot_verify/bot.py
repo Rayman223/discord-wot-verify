@@ -11,6 +11,7 @@ from discord.ext import tasks
 from .audit import AuditJournal
 from .contacts import register_contacts_command
 from .i18n import t
+from .notices import VerificationNotices
 from .openid import OpenID
 from .reports import diagnose_report, status_report
 from .security import States
@@ -82,6 +83,7 @@ class VerifyBot(discord.Client):
         self.config = config
         self.store = Store(config.database)
         self.audit = AuditJournal(self)
+        self.notices = VerificationNotices(self)
         self.states = States(config.state_secret, config.guild_id, self.store)
         self.lock = asyncio.Lock()
         self.tree = app_commands.CommandTree(self)
@@ -165,8 +167,10 @@ class VerifyBot(discord.Client):
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
         except discord.Forbidden:
+            await self.notices.send(row, nickname_pending=True)
             raise ValueError("nickname_blocked") from None
         except DISCORD_IO_ERRORS:
+            await self.notices.send(row, nickname_pending=True)
             raise ValueError("nickname_error") from None
         if is_contact:
             self.store.confirm_tag(member.id, suffix)
@@ -174,6 +178,7 @@ class VerifyBot(discord.Client):
             self.store.clear_tags(member.id)
         self.store.mark_synced(member.id, nickname)
         self.store.clear_sync_failures(member.id)
+        await self.notices.send(row)
 
     def contact_role(self, member):
         role_id = getattr(self.config, "clan_role_id", 0)

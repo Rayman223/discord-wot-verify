@@ -8,6 +8,8 @@ Un administrateur poste le panneau avec `/setup` dans **#verification**. Le bout
 
 Les liaisons sont uniques dans les deux sens et persistées en SQLite. Une nouvelle liaison nécessite `/unlink` puis une vérification. Aucun token Wargaming n’est demandé ni conservé. Le rôle peut être attribué même si Discord refuse ensuite le renommage ; la liaison est conservée et `/resync` permet de réessayer après correction des permissions.
 
+Après confirmation de l’attribution du rôle joueur, le bot publie aussi un message dans le salon du panneau enregistré (ou le salon d’origine du bouton si aucun panneau n’est enregistré). Le message mentionne uniquement le joueur, affiche le rôle sans notifier tous ses membres et reste traduit selon `LOCALE`. Il est envoyé une seule fois par liaison, même après redémarrage ou nouvelle tentative ; une déliaison permet une nouvelle confirmation à la prochaine vérification. Si seul le renommage échoue, le rôle est confirmé et le message propose `/resync`. Un refus d’attribution du rôle ne produit aucune confirmation de réussite. Une panne d’envoi au salon n’annule pas la vérification : l’envoi reste en attente et sera retenté lors d’une synchronisation suivante. Les anciennes liaisons ne génèrent pas de messages rétroactifs sans nouvelle vérification depuis le panneau.
+
 Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouton d'origine. Le salon est inclus dans l'état signé ; aucun token WG n'est transmis à Discord. Les anciens liens encore valides reviennent au serveur. En cas de renommage interdit, la page confirme la liaison et le rôle attribué, puis explique que le membre peut conserver son pseudo sans modifier la hiérarchie du serveur.
 
 | Commande | Accès | Effet |

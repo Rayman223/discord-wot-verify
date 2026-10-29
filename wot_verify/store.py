@@ -90,6 +90,7 @@ class Store:
             self.db.execute("DELETE FROM links WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM retry_sessions WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM verification_notices WHERE discord_id=?", (discord_id,))
 
     def contact(self, discord_id):
         return self.db.execute(
@@ -144,6 +145,25 @@ class Store:
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
+
+    def queue_verification_notice(self, discord_id, region, account_id, channel_id):
+        with self.db:
+            self.db.execute(
+                "INSERT OR IGNORE INTO verification_notices "
+                "(discord_id, region, account_id, channel_id) VALUES (?, ?, ?, ?)",
+                (discord_id, region, account_id, channel_id),
+            )
+
+    def verification_notice(self, discord_id):
+        return self.db.execute(
+            "SELECT * FROM verification_notices WHERE discord_id=? AND delivered=0", (discord_id,)
+        ).fetchone()
+
+    def mark_notice_delivered(self, discord_id):
+        with self.db:
+            self.db.execute(
+                "UPDATE verification_notices SET delivered=1 WHERE discord_id=?", (discord_id,)
+            )
 
     def issue_retry(
         self, discord_id, region, account_id, channel_id, *, expires_at=None, attempts=0

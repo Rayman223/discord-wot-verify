@@ -196,6 +196,9 @@ def application(bot):
                 await bot.member(discord_id)
                 new_link = bot.store.get(discord_id) is None
                 bot.store.link(discord_id, bot.config.region, account_id, nickname)
+                bot.store.queue_verification_notice(
+                    discord_id, bot.config.region, account_id, channel_id
+                )
                 if new_link:
                     await bot.audit.emit("linked", discord_id)
                 try:

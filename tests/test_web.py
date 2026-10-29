@@ -48,6 +48,7 @@ async def test_callback_uses_verified_identity_and_rejects_replay(env):
     assert response.status == 200
     assert bot.store.get(7)["account_id"] == 10
     assert bot.store.get(7)["nickname"] == "RealName"
+    assert bot.store.verification_notice(7)["account_id"] == 10
     assert response.headers["Cache-Control"] == "no-store"
     assert "secret" not in await response.text()
     assert (await invoke(bot, client, token)).status == 400
