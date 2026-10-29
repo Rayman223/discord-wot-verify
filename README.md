@@ -12,13 +12,13 @@ Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouto
 
 | Commande | Accès | Effet |
 | --- | --- | --- |
-| `/setup` | Administrateur | Crée ou actualise le panneau enregistré, sans doublon. |
-| `/contacts page:1` | Manage Roles | Examine cinq contacts de clan par page, en privé et sans retrait automatique. |
+| `/setup` | Administrateur | Poste le panneau dans le salon courant. |
 | `/resync` | Membre | Actualise rôle et pseudo ; une demande par minute. |
 | `/unlink confirm:True` | Membre | Retire le rôle et la liaison ; conserve le pseudo actuel. |
 | `/admin_unlink discord_id:…` | Administrateur | Supprime une liaison à partir de l'ID Discord. |
 | `/admin_unlink account_id:…` | Administrateur | Supprime une liaison à partir de l'ID WoT. |
 | `/admin_contact_remove discord_id:…` | Manage Roles | Retire le contact de clan et libère la place après vérification manuelle. |
+| `/contacts page:1` | Manage Roles | Examine cinq contacts de clan par page, en privé et sans retrait automatique. |
 
 Le second bouton **Become a clan contact** vérifie les grades de commandant, commandant en second ou officier de recrutement, attribue un rôle distinct et applique le pseudo `PseudoWG [TAG]`. Un seul contact est autorisé par clan ; un second candidat est orienté vers un modérateur pour vérification manuelle. Activer avec `CLAN_CONTACT_ROLE_ID` dans `.env`, puis publier le panneau avec `/setup`. Voir le [guide des contacts de clan](docs/clan-contacts.md) pour la configuration et les limites.
 

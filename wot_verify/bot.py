@@ -12,7 +12,6 @@ from .audit import AuditJournal
 from .contacts import register_contacts_command
 from .i18n import t
 from .openid import OpenID
-from .panel import update_panel
 from .security import States
 from .store import Store
 from .wargaming import CONTACT_RANKS, Wargaming
@@ -394,6 +393,8 @@ class VerifyBot(discord.Client):
         @app_commands.default_permissions(administrator=True)
         @app_commands.checks.has_permissions(administrator=True)
         async def setup(interaction: discord.Interaction):
+            from .panel import update_panel
+
             await interaction.response.defer(ephemeral=True)
             async with self.lock:
                 message = await update_panel(self, interaction.channel, LoginView(self))
