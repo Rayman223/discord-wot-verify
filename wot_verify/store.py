@@ -85,6 +85,7 @@ class Store:
             self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM challenges WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM links WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
 
     def contact(self, discord_id):
         return self.db.execute(
@@ -139,6 +140,26 @@ class Store:
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
+
+    def sync_failure_notice(self, discord_id, now):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO audit_failures VALUES (?, 1, 0) "
+                "ON CONFLICT(discord_id) DO UPDATE SET failures=failures+1",
+                (discord_id,),
+            )
+            return (
+                self.db.execute(
+                    "UPDATE audit_failures SET notified_at=? WHERE discord_id=? "
+                    "AND failures>=2 AND (notified_at=0 OR notified_at<=?)",
+                    (now, discord_id, now - 86400),
+                ).rowcount
+                == 1
+            )
+
+    def clear_sync_failures(self, discord_id):
+        with self.db:
+            self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
 
     def contacts_page(self, page, size=5):
         total = self.db.execute("SELECT count(*) FROM clan_contacts").fetchone()[0]

@@ -63,5 +63,10 @@
   "contacts_no_link": "Liaison de compte absente — vérification manuelle nécessaire.",
   "contacts_clan_changed": "Clan absent ou modifié — vérification manuelle nécessaire.",
   "contacts_rank_lost": "Grade actuel non éligible — vérification manuelle nécessaire.",
-  "contacts_ok": "Aucun écart détecté."
+  "contacts_ok": "Aucun écart détecté.",
+  "audit_linked": "Compte lié",
+  "audit_unlinked": "Compte délié",
+  "audit_contact_added": "Contact de clan confirmé",
+  "audit_contact_removed": "Contact de clan retiré",
+  "audit_sync_failed": "Échecs répétés de synchronisation — vérifier /diagnose et la hiérarchie du membre"
 }

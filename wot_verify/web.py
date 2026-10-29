@@ -110,7 +110,10 @@ def application(bot):
                 nickname = await bot.wg.nickname(account_id)
                 # Callback account_id/nickname are deliberately ignored.
                 await bot.member(discord_id)
+                new_link = bot.store.get(discord_id) is None
                 bot.store.link(discord_id, bot.config.region, account_id, nickname)
+                if new_link:
+                    await bot.audit.emit("linked", discord_id)
                 try:
                     await bot.sync(bot.store.get(discord_id))
                 except (discord.HTTPException, ValueError) as exc:

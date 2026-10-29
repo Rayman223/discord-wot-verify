@@ -62,7 +62,7 @@ def test_migrations_restart_and_monthly_due(tmp_path):
     db.close()
     db = Store(path)
     assert db.get(1)["nickname"] == "NewName"
-    assert db.db.execute("SELECT count(*) FROM migrations").fetchone()[0] == 5
+    assert db.db.execute("SELECT count(*) FROM migrations").fetchone()[0] == 6
     with pytest.raises(sqlite3.IntegrityError):
         db.db.execute("INSERT INTO links VALUES (2, 'eu', 10, 'Duplicate', 0)")
     db.close()

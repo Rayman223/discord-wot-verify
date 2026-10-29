@@ -25,6 +25,7 @@ async def env(tmp_path):
         wg=SimpleNamespace(nickname=AsyncMock(return_value="RealName")),
         openid=SimpleNamespace(verify=AsyncMock(return_value=10)),
         sync=AsyncMock(),
+        audit=SimpleNamespace(emit=AsyncMock()),
     )
     async with TestClient(TestServer(application(bot))) as client:
         yield bot, client

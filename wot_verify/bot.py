@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import re
+import time
 
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import tasks
 
+from .audit import AuditJournal
 from .contacts import register_contacts_command
 from .i18n import t
 from .openid import OpenID
@@ -79,6 +81,7 @@ class VerifyBot(discord.Client):
         super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none())
         self.config = config
         self.store = Store(config.database)
+        self.audit = AuditJournal(self)
         self.states = States(config.state_secret, config.guild_id, self.store)
         self.lock = asyncio.Lock()
         self.tree = app_commands.CommandTree(self)
@@ -158,6 +161,7 @@ class VerifyBot(discord.Client):
         else:
             self.store.clear_tags(member.id)
         self.store.mark_synced(member.id, nickname)
+        self.store.clear_sync_failures(member.id)
 
     def contact_role(self, member):
         role_id = getattr(self.config, "clan_role_id", 0)
@@ -223,6 +227,8 @@ class VerifyBot(discord.Client):
             raise
         # On timeout/unknown Discord result, keep the reservation to prevent duplicates.
         self.store.remember_tag(discord_id, f" [{membership[2]}]")
+        if current is None:
+            await self.audit.emit("contact_added", discord_id)
         try:
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Clan contact nickname")
@@ -259,6 +265,8 @@ class VerifyBot(discord.Client):
             if has_role:
                 await member.remove_roles(self.contact_role(member), reason="Clan contact removed")
         self.store.release_contact(discord_id)
+        if contact or (member and has_role):
+            await self.audit.emit("contact_removed", discord_id)
         if member and member.nick:
             for suffix in self.store.contact_tags(discord_id):
                 if member.nick.endswith(suffix):
@@ -304,6 +312,7 @@ class VerifyBot(discord.Client):
 
     async def remove(self, discord_id):
         # Keep the link on permission/network failures so an administrator can retry.
+        linked = self.store.get(discord_id) is not None
         try:
             member = await self.member(discord_id)
         except discord.NotFound:
@@ -315,6 +324,8 @@ class VerifyBot(discord.Client):
         else:
             self.store.clear_tags(discord_id)
         self.store.unlink(discord_id)
+        if linked:
+            await self.audit.emit("unlinked", discord_id)
         return cleaned
 
     async def on_member_join(self, member):
@@ -342,8 +353,10 @@ class VerifyBot(discord.Client):
                     continue
                 try:
                     await self.sync(current)
-                except (discord.HTTPException, ValueError):
+                except (*DISCORD_IO_ERRORS, ValueError):
                     log.warning("Periodic sync failed for Discord member %s", row["discord_id"])
+                    if self.store.sync_failure_notice(row["discord_id"], int(time.time())):
+                        await self.audit.emit("sync_failed", row["discord_id"])
             await asyncio.sleep(1)
 
     @monthly_sync.before_loop

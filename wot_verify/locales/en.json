@@ -63,5 +63,10 @@
   "contacts_no_link": "Account link missing — manual review needed.",
   "contacts_clan_changed": "No clan or clan changed — manual review needed.",
   "contacts_rank_lost": "Current clan rank is ineligible — manual review needed.",
-  "contacts_ok": "No discrepancy found."
+  "contacts_ok": "No discrepancy found.",
+  "audit_linked": "Account linked",
+  "audit_unlinked": "Account unlinked",
+  "audit_contact_added": "Clan contact confirmed",
+  "audit_contact_removed": "Clan contact removed",
+  "audit_sync_failed": "Repeated synchronization failures — check /diagnose and the member’s hierarchy"
 }
