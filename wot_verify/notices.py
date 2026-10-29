@@ -64,8 +64,8 @@ class VerificationNotices:
         if channel is None:
             channel = await self.bot.fetch_channel(channel_id)
         if (
-            not isinstance(channel, discord.TextChannel)
-            or channel.guild.id != self.bot.config.guild_id
+            not isinstance(channel, discord.abc.Messageable)
+            or getattr(getattr(channel, "guild", None), "id", None) != self.bot.config.guild_id
         ):
             raise ValueError("Invalid verification channel")
         await channel.send(

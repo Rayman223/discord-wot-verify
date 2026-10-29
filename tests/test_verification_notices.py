@@ -252,3 +252,34 @@ async def test_existing_contact_without_pending_notice_is_not_announced(contact_
     member.roles.append(SimpleNamespace(id=3))
     await bot.sync(bot.store.get(7))
     channel.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "channel_type",
+    [discord.TextChannel, discord.Thread, discord.VoiceChannel, discord.StageChannel],
+)
+async def test_confirmation_supports_existing_guild_messageable_destinations(env, channel_type):
+    bot, _, _ = env
+    channel = Mock(spec=channel_type)
+    channel.guild = SimpleNamespace(id=1)
+    channel.send = AsyncMock()
+    bot.get_channel = lambda _: channel
+    bot.store.save_panel(1, 20, 30)
+    bot.store.queue_verification_notice(7, "eu", 100, 20)
+    await bot.sync(bot.store.get(7))
+    channel.send.assert_awaited_once()
+    assert bot.store.verification_notice(7) is None
+
+
+@pytest.mark.parametrize("channel_type", [discord.DMChannel, discord.CategoryChannel])
+async def test_confirmation_never_posts_to_dm_or_nonmessageable_destinations(env, channel_type):
+    bot, _, _ = env
+    channel = Mock(spec=channel_type)
+    if channel_type is discord.CategoryChannel:
+        channel.guild = SimpleNamespace(id=1)
+    channel.send = AsyncMock()
+    bot.get_channel = lambda _: channel
+    bot.store.queue_verification_notice(7, "eu", 100, 20)
+    await bot.sync(bot.store.get(7))
+    channel.send.assert_not_awaited()
+    assert bot.store.verification_notice(7) is not None
