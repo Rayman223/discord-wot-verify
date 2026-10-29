@@ -25,7 +25,12 @@ def env(tmp_path, request):
     )
     bot.store.link(7, "eu", 100, "Player")
     channel = Mock(spec=discord.TextChannel)
-    channel.guild = SimpleNamespace(id=1)
+    channel.guild = SimpleNamespace(
+        id=1,
+        get_role=lambda role_id: SimpleNamespace(
+            name="contact de clan" if role_id == 3 else "joueur"
+        ),
+    )
     channel.send = AsyncMock()
     bot.get_channel = lambda _: channel
     bot.fetch_channel = AsyncMock(return_value=channel)
@@ -44,7 +49,9 @@ async def test_confirmation_once_per_link_and_only_member_ping(env):
     member.add_roles.assert_awaited_once()
     channel.send.assert_awaited_once()
     text = channel.send.call_args.args[0]
-    assert text == bot.t("verification_role_confirmed").format(member="<@7>", role="<@&2>")
+    assert text == bot.t("verification_role_confirmed").format(member="<@7>", role="joueur")
+    assert "<@&" not in channel.send.call_args.args[0]
+    assert channel.send.call_args.kwargs["delete_after"] == 30
     mentions = channel.send.call_args.kwargs["allowed_mentions"].to_dict()
     assert mentions["users"] == [7]
     assert "roles" not in mentions["parse"] and "everyone" not in mentions["parse"]
@@ -58,6 +65,38 @@ async def test_no_notification_for_existing_links_without_web_verification(env):
     bot, _, channel = env
     await bot.sync(bot.store.get(7))
     channel.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize("contact", [False, True])
+async def test_role_name_is_plain_text_and_notice_expires(contact_env, contact):
+    bot, _, channel = contact_env
+    channel.guild.get_role = lambda _: SimpleNamespace(name="Team *A* @everyone <@&123>")
+    if contact:
+        await bot.claim_contact(7, channel_id=20)
+    else:
+        bot.store.queue_verification_notice(7, "eu", 100, 20)
+        await bot.sync(bot.store.get(7))
+    content = channel.send.call_args.args[0]
+    assert "Team \\*A\\*" in content
+    assert "@everyone" not in content
+    assert "<@&" not in content
+    assert channel.send.call_args.kwargs["delete_after"] == 30
+    mentions = channel.send.call_args.kwargs["allowed_mentions"].to_dict()
+    assert mentions["users"] == [7]
+    assert "roles" not in mentions["parse"]
+
+
+@pytest.mark.parametrize("contact", [False, True])
+async def test_missing_cached_role_uses_translated_plain_label(contact_env, contact):
+    bot, _, channel = contact_env
+    channel.guild.get_role = lambda _: None
+    if contact:
+        await bot.claim_contact(7, channel_id=20)
+    else:
+        bot.store.queue_verification_notice(7, "eu", 100, 20)
+        await bot.sync(bot.store.get(7))
+    label = bot.t("status_contact_role" if contact else "status_player_role")
+    assert label in channel.send.call_args.args[0]
 
 
 async def test_no_confirmation_if_role_assignment_fails_then_resync_sends_it(env):
@@ -171,8 +210,10 @@ async def test_clan_confirmation_once_per_reservation_and_only_member_ping(conta
     await bot.claim_contact(7, channel_id=20)
     content = channel.send.call_args.args[0]
     assert content == bot.t("contact_role_confirmed").format(
-        member="<@7>", role="<@&3>", clan_tag="TAG"
+        member="<@7>", role="contact de clan", clan_tag="TAG"
     )
+    assert "<@&" not in channel.send.call_args.args[0]
+    assert channel.send.call_args.kwargs["delete_after"] == 30
     mentions = channel.send.call_args.kwargs["allowed_mentions"].to_dict()
     assert mentions["users"] == [7]
     assert "roles" not in mentions["parse"] and "everyone" not in mentions["parse"]
@@ -205,7 +246,8 @@ async def test_contact_message_reflects_only_confirmed_role_assignment(contact_e
         await bot.claim_contact(7, channel_id=20)
     if failure == "nickname":
         assert "/resync" in channel.send.call_args.args[0]
-        assert "<@&3>" in channel.send.call_args.args[0]
+        assert "contact de clan" in channel.send.call_args.args[0]
+        assert "<@&" not in channel.send.call_args.args[0]
     else:
         channel.send.assert_not_awaited()
         assert bot.store.contact_notice(7) is None
@@ -261,7 +303,12 @@ async def test_existing_contact_without_pending_notice_is_not_announced(contact_
 async def test_confirmation_supports_existing_guild_messageable_destinations(env, channel_type):
     bot, _, _ = env
     channel = Mock(spec=channel_type)
-    channel.guild = SimpleNamespace(id=1)
+    channel.guild = SimpleNamespace(
+        id=1,
+        get_role=lambda role_id: SimpleNamespace(
+            name="contact de clan" if role_id == 3 else "joueur"
+        ),
+    )
     channel.send = AsyncMock()
     bot.get_channel = lambda _: channel
     bot.store.save_panel(1, 20, 30)
@@ -276,7 +323,12 @@ async def test_confirmation_never_posts_to_dm_or_nonmessageable_destinations(env
     bot, _, _ = env
     channel = Mock(spec=channel_type)
     if channel_type is discord.CategoryChannel:
-        channel.guild = SimpleNamespace(id=1)
+        channel.guild = SimpleNamespace(
+            id=1,
+            get_role=lambda role_id: SimpleNamespace(
+                name="contact de clan" if role_id == 3 else "joueur"
+            ),
+        )
     channel.send = AsyncMock()
     bot.get_channel = lambda _: channel
     bot.store.queue_verification_notice(7, "eu", 100, 20)
