@@ -400,10 +400,15 @@ class VerifyBot(discord.Client):
                 return
             try:
                 await member.add_roles(self.role(member), reason="Restore verified player role")
-                await self.sync_visitor_role(member, player=True)
             except (*DISCORD_IO_ERRORS, ValueError):
                 log.warning("Could not restore role for Discord member %s", member.id)
                 return
+            try:
+                await self.sync_visitor_role(member, player=True)
+            except (*DISCORD_IO_ERRORS, ValueError):
+                log.warning(
+                    "Visitor role cleanup failed on rejoin for Discord member %s", member.id
+                )
             try:
                 await member.send(self.t("rejoined"))
             except discord.HTTPException:

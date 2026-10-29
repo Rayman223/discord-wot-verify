@@ -171,6 +171,31 @@ async def test_visitor_cleanup_failure_can_be_retried_by_resync(env):
     assert role_ids(member) == {2, 5}
 
 
+@pytest.mark.parametrize("failure", ["forbidden", "timeout", "missing_role"])
+async def test_rejoin_still_requests_resync_when_visitor_cleanup_fails(env, failure):
+    bot, member, roles = env
+    if failure == "forbidden":
+        member.remove_roles.side_effect = discord.Forbidden(
+            SimpleNamespace(status=403, reason=""), ""
+        )
+    elif failure == "timeout":
+        member.remove_roles.side_effect = TimeoutError()
+    else:
+        del roles[4]
+    await bot.on_member_join(member)
+    assert 2 in role_ids(member)
+    member.send.assert_awaited_once_with(bot.t("rejoined"))
+    member.edit.assert_not_awaited()
+
+
+async def test_rejoin_does_not_announce_player_restoration_if_grant_fails(env):
+    bot, member, _ = env
+    member.add_roles.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason=""), "")
+    await bot.on_member_join(member)
+    member.send.assert_not_awaited()
+    member.remove_roles.assert_not_awaited()
+
+
 async def test_disabled_switch_preserves_existing_roles(env):
     bot, member, _ = env
     bot.config = replace(bot.config, visitor_role_id=0)
