@@ -118,7 +118,10 @@
   "diagnose_grant_send": "Manquante : autoriser le bot à envoyer des messages ici (ou dans les fils pour un fil).",
   "diagnose_nickname_hierarchy": "Limites de la hiérarchie pour les pseudos",
   "diagnose_nickname_hint": "Pour renommer un membre, le rôle le plus élevé du bot doit être strictement au-dessus de celui du membre. Discord interdit de renommer le propriétaire du serveur. La liaison et le rôle joueur peuvent être conservés même si le renommage est bloqué.",
-  "command_cooldown": "Veuillez patienter quelques instants avant de relancer cette commande.",
   "diagnose_read_history": "Permission Voir les anciens messages (salon actuel)",
-  "diagnose_grant_history": "Manquante : autoriser Voir les anciens messages dans ce salon pour que /setup puisse retrouver et actualiser le panneau de vérification enregistré."
+  "diagnose_grant_history": "Manquante : autoriser Voir les anciens messages dans ce salon pour que /setup puisse retrouver et actualiser le panneau de vérification enregistré.",
+  "verification_role_confirmed": "✅ {member}, ton compte est vérifié et tu as bien reçu le rôle {role}.",
+  "verification_role_pending_nickname": "✅ {member}, ton compte est vérifié et tu as bien reçu le rôle {role}. La mise à jour du pseudo reste à confirmer ; utilise /resync pour réessayer.",
+  "contact_role_confirmed": "✅ {member}, tu as bien reçu le rôle {role} et tu es désormais le contact du clan [{clan_tag}].",
+  "contact_role_pending_nickname": "✅ {member}, tu as bien reçu le rôle {role} et tu es désormais le contact du clan [{clan_tag}]. La mise à jour du pseudo reste à confirmer ; utilise /resync pour réessayer."
 }
