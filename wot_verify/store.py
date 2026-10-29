@@ -91,6 +91,7 @@ class Store:
             self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM retry_sessions WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM verification_notices WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM clan_contact_notices WHERE discord_id=?", (discord_id,))
 
     def contact(self, discord_id):
         return self.db.execute(
@@ -116,6 +117,7 @@ class Store:
     def release_contact(self, discord_id):
         with self.db:
             self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM clan_contact_notices WHERE discord_id=?", (discord_id,))
 
     def remember_tag(self, discord_id, suffix):
         with self.db:
@@ -145,6 +147,28 @@ class Store:
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
+
+    def queue_contact_notice(self, discord_id, region, account_id, clan_id, clan_tag, channel_id):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO clan_contact_notices "
+                "(discord_id, region, account_id, clan_id, clan_tag, channel_id) VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(discord_id) DO UPDATE SET clan_tag=excluded.clan_tag, "
+                "channel_id=CASE WHEN excluded.channel_id=0 THEN clan_contact_notices.channel_id ELSE excluded.channel_id END "
+                "WHERE clan_contact_notices.delivered=0",
+                (discord_id, region, account_id, clan_id, clan_tag, channel_id),
+            )
+
+    def contact_notice(self, discord_id):
+        return self.db.execute(
+            "SELECT * FROM clan_contact_notices WHERE discord_id=? AND delivered=0", (discord_id,)
+        ).fetchone()
+
+    def mark_contact_notice_delivered(self, discord_id):
+        with self.db:
+            self.db.execute(
+                "UPDATE clan_contact_notices SET delivered=1 WHERE discord_id=?", (discord_id,)
+            )
 
     def queue_verification_notice(self, discord_id, region, account_id, channel_id):
         with self.db:

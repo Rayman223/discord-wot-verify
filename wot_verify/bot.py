@@ -47,7 +47,9 @@ class LoginView(discord.ui.View):
             return await interaction.followup.send(self.bot.t("wrong_server"), ephemeral=True)
         try:
             async with self.bot.lock:
-                await self.bot.claim_contact(interaction.user.id)
+                await self.bot.claim_contact(
+                    interaction.user.id, channel_id=getattr(interaction, "channel_id", 0)
+                )
             message = self.bot.t("clan_success")
         except ValueError as exc:
             message = self.bot.t(str(exc))
@@ -168,9 +170,17 @@ class VerifyBot(discord.Client):
                 await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
         except discord.Forbidden:
             await self.notices.send(row, nickname_pending=True)
+            if is_contact:
+                await self.notices.send(
+                    row, contact=True, nickname_pending=True, clan_tag=suffix[2:-1]
+                )
             raise ValueError("nickname_blocked") from None
         except DISCORD_IO_ERRORS:
             await self.notices.send(row, nickname_pending=True)
+            if is_contact:
+                await self.notices.send(
+                    row, contact=True, nickname_pending=True, clan_tag=suffix[2:-1]
+                )
             raise ValueError("nickname_error") from None
         if is_contact:
             self.store.confirm_tag(member.id, suffix)
@@ -179,6 +189,8 @@ class VerifyBot(discord.Client):
         self.store.mark_synced(member.id, nickname)
         self.store.clear_sync_failures(member.id)
         await self.notices.send(row)
+        if is_contact:
+            await self.notices.send(row, contact=True, clan_tag=suffix[2:-1])
 
     def contact_role(self, member):
         role_id = getattr(self.config, "clan_role_id", 0)
@@ -212,7 +224,7 @@ class VerifyBot(discord.Client):
             raise ValueError("clan_name_long")
         return result
 
-    async def claim_contact(self, discord_id):
+    async def claim_contact(self, discord_id, *, channel_id=0):
         # Caller holds the shared lock across lookup, reservation and Discord updates.
         if not self.is_ready():
             raise ValueError("not_ready")
@@ -244,14 +256,19 @@ class VerifyBot(discord.Client):
             raise
         # On timeout/unknown Discord result, keep the reservation to prevent duplicates.
         self.store.remember_tag(discord_id, f" [{membership[2]}]")
+        self.store.queue_contact_notice(
+            discord_id, row["region"], row["account_id"], membership[0], membership[2], channel_id
+        )
         if current is None:
             await self.audit.emit("contact_added", discord_id)
         try:
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="Clan contact nickname")
         except DISCORD_IO_ERRORS:
+            await self.notices.send(row, contact=True, nickname_pending=True)
             raise ValueError("clan_nickname_error") from None
         self.store.confirm_tag(discord_id, f" [{membership[2]}]")
+        await self.notices.send(row, contact=True)
 
     async def remove_contact(self, discord_id, member=None, *, was_contact=False):
         contact = self.store.contact(discord_id)

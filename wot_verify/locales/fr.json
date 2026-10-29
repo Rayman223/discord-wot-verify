@@ -121,5 +121,7 @@
   "diagnose_read_history": "Permission Voir les anciens messages (salon actuel)",
   "diagnose_grant_history": "Manquante : autoriser Voir les anciens messages dans ce salon pour que /setup puisse retrouver et actualiser le panneau de vérification enregistré.",
   "verification_role_confirmed": "✅ {member}, ton compte est vérifié et tu as bien reçu le rôle {role}.",
-  "verification_role_pending_nickname": "✅ {member}, ton compte est vérifié et tu as bien reçu le rôle {role}. La mise à jour du pseudo reste à confirmer ; utilise /resync pour réessayer."
+  "verification_role_pending_nickname": "✅ {member}, ton compte est vérifié et tu as bien reçu le rôle {role}. La mise à jour du pseudo reste à confirmer ; utilise /resync pour réessayer.",
+  "contact_role_confirmed": "✅ {member}, tu as bien reçu le rôle {role} et tu es désormais le contact du clan [{clan_tag}].",
+  "contact_role_pending_nickname": "✅ {member}, tu as bien reçu le rôle {role} et tu es désormais le contact du clan [{clan_tag}]. La mise à jour du pseudo reste à confirmer ; utilise /resync pour réessayer."
 }

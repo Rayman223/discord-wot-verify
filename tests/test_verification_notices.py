@@ -129,3 +129,126 @@ async def test_notification_state_survives_restart_and_unlink_resets_it(env):
     bot.store.queue_verification_notice(7, "eu", 100, 20)
     await bot.sync(bot.store.get(7))
     assert channel.send.await_count == 2
+
+
+@pytest.fixture
+def contact_env(env):
+    bot, member, channel = env
+    bot.config = Config(
+        "token",
+        "app",
+        "x" * 32,
+        1,
+        2,
+        "https://example.org",
+        locale=bot.config.locale,
+        database=bot.config.database,
+        clan_role_id=3,
+    )
+    member.roles = [SimpleNamespace(id=2)]
+    contact_role = SimpleNamespace(
+        id=3, managed=False, permissions=discord.Permissions.none(), is_default=lambda: False
+    )
+    member.guild = SimpleNamespace(get_role=lambda _: contact_role)
+
+    async def add(role, **kwargs):
+        if role.id not in {r.id for r in member.roles}:
+            member.roles.append(role)
+
+    member.add_roles.side_effect = add
+
+    async def remove(role, **kwargs):
+        member.roles = [r for r in member.roles if r.id != role.id]
+
+    member.remove_roles = AsyncMock(side_effect=remove)
+    bot.wg.clan_membership = AsyncMock(return_value=(42, "commander", "TAG"))
+    bot.is_ready = lambda: True
+    return bot, member, channel
+
+
+async def test_clan_confirmation_once_per_reservation_and_only_member_ping(contact_env):
+    bot, _, channel = contact_env
+    await bot.claim_contact(7, channel_id=20)
+    content = channel.send.call_args.args[0]
+    assert content == bot.t("contact_role_confirmed").format(
+        member="<@7>", role="<@&3>", clan_tag="TAG"
+    )
+    mentions = channel.send.call_args.kwargs["allowed_mentions"].to_dict()
+    assert mentions["users"] == [7]
+    assert "roles" not in mentions["parse"] and "everyone" not in mentions["parse"]
+    await bot.claim_contact(7, channel_id=20)
+    assert channel.send.await_count == 1
+    assert bot.store.contact_notice(7) is None
+    assert bot.store.verification_notice(7) is None
+    bot.store.close()
+    bot.store = Store(bot.config.database)
+    await bot.claim_contact(7, channel_id=20)
+    assert channel.send.await_count == 1
+    await bot.remove_contact(7)
+    await bot.claim_contact(7, channel_id=20)
+    assert channel.send.await_count == 2
+
+
+@pytest.mark.parametrize("failure", ["occupied", "role", "nickname", "timeout"])
+async def test_contact_message_reflects_only_confirmed_role_assignment(contact_env, failure):
+    bot, member, channel = contact_env
+    if failure == "occupied":
+        bot.store.reserve_contact(99, "eu", 42)
+    elif failure == "role":
+        member.add_roles.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason=""), "")
+    elif failure == "nickname":
+        member.nick = "Old"
+        member.edit.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason=""), "")
+    else:
+        member.add_roles.side_effect = TimeoutError()
+    with pytest.raises((ValueError, discord.Forbidden, TimeoutError)):
+        await bot.claim_contact(7, channel_id=20)
+    if failure == "nickname":
+        assert "/resync" in channel.send.call_args.args[0]
+        assert "<@&3>" in channel.send.call_args.args[0]
+    else:
+        channel.send.assert_not_awaited()
+        assert bot.store.contact_notice(7) is None
+
+
+async def test_failed_contact_post_retried_by_sync_with_latest_clan_tag(contact_env):
+    bot, _, channel = contact_env
+    channel.send.side_effect = TimeoutError()
+    await bot.claim_contact(7, channel_id=20)
+    assert bot.store.contact_notice(7) is not None
+    channel.send.side_effect = None
+    channel.send.reset_mock()
+    bot.wg.clan_membership.return_value = (42, "commander", "NEW")
+    await bot.sync(bot.store.get(7))
+    channel.send.assert_awaited_once()
+    assert "[NEW]" in channel.send.call_args.args[0]
+    assert bot.store.contact_notice(7) is None
+
+
+async def test_contact_withdrawal_cancels_pending_confirmation(contact_env):
+    bot, _, channel = contact_env
+    channel.send.side_effect = TimeoutError()
+    await bot.claim_contact(7, channel_id=20)
+    assert bot.store.contact_notice(7) is not None
+    await bot.remove_contact(7)
+    assert bot.store.contact_notice(7) is None
+    channel.send.reset_mock()
+    channel.send.side_effect = None
+    await bot.sync(bot.store.get(7))
+    channel.send.assert_not_awaited()
+
+
+async def test_unlink_cancels_pending_contact_confirmation(contact_env):
+    bot, _, channel = contact_env
+    channel.send.side_effect = TimeoutError()
+    await bot.claim_contact(7, channel_id=20)
+    bot.store.unlink(7)
+    assert bot.store.contact_notice(7) is None
+
+
+async def test_existing_contact_without_pending_notice_is_not_announced(contact_env):
+    bot, member, channel = contact_env
+    bot.store.reserve_contact(7, "eu", 42)
+    member.roles.append(SimpleNamespace(id=3))
+    await bot.sync(bot.store.get(7))
+    channel.send.assert_not_awaited()

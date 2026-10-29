@@ -121,5 +121,7 @@
   "diagnose_read_history": "Read Message History permission (current channel)",
   "diagnose_grant_history": "Missing: allow Read Message History in this channel so /setup can retrieve and update the saved verification panel.",
   "verification_role_confirmed": "✅ {member}, your account is verified and you have received the {role} role.",
-  "verification_role_pending_nickname": "✅ {member}, your account is verified and you have received the {role} role. The nickname update still needs confirmation; use /resync to retry."
+  "verification_role_pending_nickname": "✅ {member}, your account is verified and you have received the {role} role. The nickname update still needs confirmation; use /resync to retry.",
+  "contact_role_confirmed": "✅ {member}, you have received the {role} role and are now the contact for clan [{clan_tag}].",
+  "contact_role_pending_nickname": "✅ {member}, you have received the {role} role and are now the contact for clan [{clan_tag}]. The nickname update still needs confirmation; use /resync to retry."
 }

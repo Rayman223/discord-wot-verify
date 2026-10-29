@@ -62,7 +62,7 @@ def test_migrations_restart_and_monthly_due(tmp_path):
     db.close()
     db = Store(path)
     assert db.get(1)["nickname"] == "NewName"
-    assert db.db.execute("SELECT count(*) FROM migrations").fetchone()[0] == 8
+    assert db.db.execute("SELECT count(*) FROM migrations").fetchone()[0] == 9
     with pytest.raises(sqlite3.IntegrityError):
         db.db.execute("INSERT INTO links VALUES (2, 'eu', 10, 'Duplicate', 0)")
     db.close()
@@ -96,7 +96,7 @@ def test_upgrade_existing_database_preserves_links_and_is_idempotent(tmp_path):
     for _ in range(2):
         db = Store(path)
         assert db.get(7)["synced_at"] == 123
-        assert db.db.execute("SELECT count(*) FROM migrations").fetchone()[0] == 8
+        assert db.db.execute("SELECT count(*) FROM migrations").fetchone()[0] == 9
         db.close()
 
 
