@@ -82,6 +82,7 @@
   "status_account": "Compte lié (dernier pseudo enregistré)",
   "status_last_sync": "Dernière synchronisation réussie",
   "status_never": "Aucune synchronisation réussie pour le moment.",
+  "status_visitor_role": "Rôle visiteur",
   "status_player_role": "Rôle joueur",
   "status_contact_role": "Rôle de contact de clan",
   "status_present": "Présent",

@@ -140,6 +140,7 @@ def diagnose_report(bot, interaction):
     for role_id, label in (
         (bot.config.role_id, "status_player_role"),
         (getattr(bot.config, "clan_role_id", 0), "status_contact_role"),
+        (getattr(bot.config, "visitor_role_id", 0), "status_visitor_role"),
     ):
         if not role_id:
             report.add_field(name=bot.t(label), value=bot.t("status_disabled"), inline=False)
@@ -152,6 +153,10 @@ def diagnose_report(bot, interaction):
             or role.managed
             or role.permissions.administrator
             or (label == "status_contact_role" and role_id == bot.config.role_id)
+            or (
+                label == "status_visitor_role"
+                and role_id in {bot.config.role_id, getattr(bot.config, "clan_role_id", 0)}
+            )
         ):
             result = bot.t("diagnose_role_invalid")
         elif role >= me.top_role:

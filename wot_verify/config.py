@@ -19,6 +19,7 @@ class Config:
     clan_role_id: int = 0
     locale: str = "en"
     log_channel_id: int = 0
+    visitor_role_id: int = 0
 
     @classmethod
     def load(cls):
@@ -35,6 +36,7 @@ class Config:
             database=os.getenv("DATABASE_PATH", "/data/verify.sqlite3"),
             port=int(os.getenv("PORT", "8080")),
             clan_role_id=int(os.getenv("CLAN_CONTACT_ROLE_ID", "0")),
+            visitor_role_id=int(os.getenv("VISITOR_ROLE_ID", "0")),
         )
         if not 0 <= config.log_channel_id < 2**63:
             raise ValueError("LOG_CHANNEL_ID must be a positive channel ID, or 0 to disable")
@@ -60,4 +62,10 @@ class Config:
             raise ValueError(
                 "CLAN_CONTACT_ROLE_ID must be a separate positive role ID, or 0 to disable"
             )
+        if not 0 <= config.visitor_role_id < 2**63 or config.visitor_role_id in {
+            config.role_id,
+            config.guild_id,
+            config.clan_role_id or -1,
+        }:
+            raise ValueError("VISITOR_ROLE_ID must be a separate positive role ID, or 0 to disable")
         return config

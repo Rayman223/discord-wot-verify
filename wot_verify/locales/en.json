@@ -82,6 +82,7 @@
   "status_account": "Linked account (last saved nickname)",
   "status_last_sync": "Last successful synchronization",
   "status_never": "No successful synchronization yet.",
+  "status_visitor_role": "Visitor role",
   "status_player_role": "Player role",
   "status_contact_role": "Clan contact role",
   "status_present": "Present",

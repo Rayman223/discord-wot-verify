@@ -8,6 +8,12 @@ Le [logo du bot](assets/branding/wot-verify-avatar.png) est prêt à être impor
 
 ## Fonctionnement
 
+Avec `VISITOR_ROLE_ID` configuré, l’attribution du rôle **joueur** retire le rôle **visiteur**. Le retrait de **joueur** rétablit **visiteur**, y compris lors de `/unlink`, `/admin_unlink` et des modifications manuelles dans Discord. La vérification, `/resync` et le retour d’un joueur lié sur le serveur appliquent aussi cette bascule. Les autres rôles sont préservés. Le retrait du rôle contact de clan seul ne rend pas le membre visiteur.
+
+Dans `.env`, ajouter `VISITOR_ROLE_ID=475356542716084238` pour ce serveur, ou `0` pour désactiver cette fonction. Le rôle visiteur doit être distinct de joueur et contact de clan, sans permission Administrateur, et placé sous le rôle du bot. Après modification, recréer le conteneur avec le script de mise à jour habituel. `/diagnose` contrôle aussi ce rôle. Les membres déjà joueurs peuvent utiliser `/resync` pour retirer un rôle visiteur encore présent ; le contrôle périodique applique également la bascule lors de la prochaine synchronisation.
+
+Si Discord refuse la bascule, les commandes signalent l’échec et conservent la liaison pour permettre une nouvelle tentative. Une modification manuelle refusée est consignée dans les logs du bot ; après correction des permissions, réattribuer puis retirer le rôle joueur, ou réessayer la déliaison. Les membres absents ne reçoivent pas de rôle à distance.
+
 Un administrateur poste le panneau avec `/setup` dans **#verification**. Le bouton persistant répond en privé avec un lien valable dix minutes. Le joueur s'authentifie chez Wargaming ; le serveur vérifie son assertion OpenID 2.0 par `check_authentication` auprès de Wargaming et récupère le pseudo avec l’API publique `account/info`. Les identifiants et pseudos fournis directement dans l'URL de retour ne sont jamais utilisés comme preuve.
 
 Les liaisons sont uniques dans les deux sens et persistées en SQLite. Une nouvelle liaison nécessite `/unlink` puis une vérification. Aucun token Wargaming n’est demandé ni conservé. Le rôle peut être attribué même si Discord refuse ensuite le renommage ; la liaison est conservée et `/resync` permet de réessayer après correction des permissions.
