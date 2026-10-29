@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -85,6 +88,8 @@ class Store:
             self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM challenges WHERE discord_id=?", (discord_id,))
             self.db.execute("DELETE FROM links WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
+            self.db.execute("DELETE FROM retry_sessions WHERE discord_id=?", (discord_id,))
 
     def contact(self, discord_id):
         return self.db.execute(
@@ -139,6 +144,98 @@ class Store:
         return self.db.execute(
             "SELECT * FROM links WHERE synced_at<=?", (int(time.time()) - 30 * 86400,)
         ).fetchall()
+
+    def issue_retry(
+        self, discord_id, region, account_id, channel_id, *, expires_at=None, attempts=0
+    ):
+        now = int(time.time())
+        cookie, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        expires_at = expires_at if expires_at is not None else now + 600
+        with self.db:
+            self.db.execute(
+                "DELETE FROM retry_sessions WHERE expires_at<=? OR discord_id=?", (now, discord_id)
+            )
+            self.db.execute(
+                "INSERT INTO retry_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    hashlib.sha256(cookie.encode()).hexdigest(),
+                    hashlib.sha256(csrf.encode()).hexdigest(),
+                    discord_id,
+                    region,
+                    account_id,
+                    channel_id,
+                    expires_at,
+                    now + 30 if attempts else now,
+                    attempts,
+                ),
+            )
+        return cookie, csrf, max(0, expires_at - now)
+
+    def consume_retry(self, cookie, csrf):
+        now = int(time.time())
+        if not 1 <= len(cookie) <= 128 or not 1 <= len(csrf) <= 128:
+            raise ValueError("invalid_state")
+        with self.db:
+            row = self.db.execute(
+                "SELECT * FROM retry_sessions WHERE cookie_hash=?",
+                (hashlib.sha256(cookie.encode()).hexdigest(),),
+            ).fetchone()
+            if (
+                row is None
+                or row["expires_at"] <= now
+                or row["attempts"] >= 3
+                or not hmac.compare_digest(
+                    row["csrf_hash"], hashlib.sha256(csrf.encode()).hexdigest()
+                )
+            ):
+                raise ValueError("invalid_state")
+            if row["next_attempt"] > now:
+                raise ValueError("retry_wait")
+            self.db.execute("DELETE FROM retry_sessions WHERE cookie_hash=?", (row["cookie_hash"],))
+            return row
+
+    def sync_failure_notice(self, discord_id, now):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO audit_failures VALUES (?, 1, 0) "
+                "ON CONFLICT(discord_id) DO UPDATE SET failures=failures+1",
+                (discord_id,),
+            )
+            return (
+                self.db.execute(
+                    "UPDATE audit_failures SET notified_at=? WHERE discord_id=? "
+                    "AND failures>=2 AND (notified_at=0 OR notified_at<=?)",
+                    (now, discord_id, now - 86400),
+                ).rowcount
+                == 1
+            )
+
+    def clear_sync_failures(self, discord_id):
+        with self.db:
+            self.db.execute("DELETE FROM audit_failures WHERE discord_id=?", (discord_id,))
+
+    def contacts_page(self, page, size=5):
+        total = self.db.execute("SELECT count(*) FROM clan_contacts").fetchone()[0]
+        rows = self.db.execute(
+            "SELECT c.*, l.account_id FROM clan_contacts c LEFT JOIN links l "
+            "ON l.discord_id=c.discord_id AND l.region=c.region "
+            "ORDER BY c.discord_id LIMIT ? OFFSET ?",
+            (size, (page - 1) * size),
+        ).fetchall()
+        return total, rows
+
+    def panel(self, guild_id):
+        return self.db.execute(
+            "SELECT * FROM verification_panel WHERE guild_id=?", (guild_id,)
+        ).fetchone()
+
+    def save_panel(self, guild_id, channel_id, message_id):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO verification_panel VALUES (?, ?, ?) "
+                "ON CONFLICT(guild_id) DO UPDATE SET channel_id=excluded.channel_id, message_id=excluded.message_id",
+                (guild_id, channel_id, message_id),
+            )
 
     def close(self):
         self.db.close()

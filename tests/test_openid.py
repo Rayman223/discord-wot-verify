@@ -159,6 +159,7 @@ async def test_callback_with_real_verifier_and_browser_state(protocol):
         member=AsyncMock(),
         wg=SimpleNamespace(nickname=AsyncMock(return_value="Player")),
         sync=AsyncMock(),
+        audit=SimpleNamespace(emit=AsyncMock()),
     )
     async with TestClient(TestServer(application(bot))) as browser:
         response = await browser.get(

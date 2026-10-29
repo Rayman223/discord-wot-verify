@@ -18,6 +18,7 @@ class Config:
     port: int = 8080
     clan_role_id: int = 0
     locale: str = "en"
+    log_channel_id: int = 0
 
     @classmethod
     def load(cls):
@@ -28,12 +29,15 @@ class Config:
             guild_id=int(os.environ["GUILD_ID"]),
             role_id=int(os.environ["ROLE_ID"]),
             public_url=os.environ["PUBLIC_URL"].rstrip("/"),
+            log_channel_id=int(os.getenv("LOG_CHANNEL_ID", "0")),
             locale=os.getenv("LOCALE", "en"),
             region=os.getenv("WG_REGION", "eu"),
             database=os.getenv("DATABASE_PATH", "/data/verify.sqlite3"),
             port=int(os.getenv("PORT", "8080")),
             clan_role_id=int(os.getenv("CLAN_CONTACT_ROLE_ID", "0")),
         )
+        if not 0 <= config.log_channel_id < 2**63:
+            raise ValueError("LOG_CHANNEL_ID must be a positive channel ID, or 0 to disable")
         if config.locale not in SUPPORTED_LOCALES:
             raise ValueError("LOCALE must be en or fr")
         url = urlsplit(config.public_url)
