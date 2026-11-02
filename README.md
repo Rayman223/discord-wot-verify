@@ -124,7 +124,7 @@ docker run -d \
   --restart unless-stopped \
   --network swagproxy \
   --env-file /mnt/user/appdata/discord-wot-verify/.env \
-  --mount type=bind,src=/mnt/user/appdata/discord-wot-verify/data,dst=/data \
+  -v /mnt/user/appdata/discord-wot-verify/data:/data:rw \
   --read-only --tmpfs /tmp --cap-drop ALL \
   --security-opt no-new-privileges:true \
   discord-wot-verify:local
@@ -137,6 +137,8 @@ Adapter `swagproxy` si le réseau partagé avec SWAG porte un autre nom. Pour le
 Les migrations SQL versionnées dans `wot_verify/migrations/` s'appliquent automatiquement au démarrage et sont suivies dans la table `migrations`. Elles sont idempotentes ; aucun accès à une base Battle-Conquest n'est nécessaire. SQLite exige un stockage local avec verrouillage fiable : éviter un montage SMB/NFS pour `data`.
 
 Pour sauvegarder de façon cohérente, arrêter le bot, copier tout le répertoire `data` puis le redémarrer. Sauvegarder aussi `.env` dans un emplacement privé. Une perte de SQLite impose une nouvelle vérification aux membres ; une sauvegarde contient des identifiants personnels et doit rester privée.
+
+Avec **Appdata Backup**, le montage `-v` permet la détection de `data` par Unraid. Le nom du conteneur peut différer de celui du dossier. Le `.env`, situé hors du montage, doit être ajouté aux fichiers supplémentaires à sauvegarder. Voir la [configuration Appdata Backup et la correction des anciens déploiements](docs/unraid-update.md#sauvegardes-avec-appdata-backup).
 
 ```bash
 docker compose stop wot-verify

@@ -113,12 +113,13 @@ main() {
         old_renamed=1
     fi
     new_started=1
+    # Appdata Backup lit HostConfig.Binds via Unraid : utiliser -v plutôt que --mount.
     docker run -d \
         --name "$container" \
         --restart unless-stopped \
         --network "$network" \
         --env-file "$project_dir/.env" \
-        --mount "type=bind,src=$project_dir/data,dst=/data" \
+        -v "$project_dir/data:/data:rw" \
         --read-only --tmpfs /tmp --cap-drop ALL \
         --security-opt no-new-privileges:true \
         "$candidate" >/dev/null
