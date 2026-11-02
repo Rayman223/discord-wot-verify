@@ -45,6 +45,30 @@ Exécuter cette entrée après les fusions souhaitées et consulter sa sortie da
 
 La première récupération du dépôt décrite plus haut reste nécessaire pour que le fichier existe localement. Les lancements suivants effectuent eux-mêmes le `git pull`. Le script ne crée aucune planification ; si une fréquence est configurée dans User Scripts, chaque lancement construit et remplace le conteneur, même sans nouveau commit.
 
+## Sauvegardes avec Appdata Backup
+
+Le conteneur `wot-verify` monte `/mnt/user/appdata/discord-wot-verify/data` sur `/data`. Les noms du conteneur et du dossier peuvent être différents. Le script utilise `-v` pour renseigner `HostConfig.Binds`, lu par le gestionnaire Docker d’Unraid et Appdata Backup. Avec l’ancien `--mount`, SQLite reste persistante mais le plugin peut annoncer qu’aucun volume n’est à sauvegarder.
+
+Pour corriger un conteneur existant, récupérer d’abord le script corrigé, puis lancer la mise à jour :
+
+```bash
+cd /mnt/user/appdata/discord-wot-verify
+git pull --ff-only origin main
+bash scripts/update-unraid.sh
+docker inspect wot-verify --format '{{json .HostConfig.Binds}}'
+```
+
+Le `git pull` préalable est nécessaire pour cette première correction : le script charge ses instructions avant sa propre récupération Git. Le nouveau conteneur réutilise le dossier `data` existant ; aucune copie ni suppression manuelle de la base n’est nécessaire. La dernière commande doit afficher `["/mnt/user/appdata/discord-wot-verify/data:/data:rw"]` au lieu de `null` avec les chemins par défaut.
+
+Dans Appdata Backup :
+
+- Inclure `/mnt/user/appdata` dans **Appdata source(s)**, ainsi que la racine du pool si le montage utilise directement un chemin de pool.
+- Pour `wot-verify`, laisser **Skip?** et **Skip stopping container?** sur **No**, sans exclusion du dossier `data`.
+- Choisir **Stop/Backup/Start** pour limiter l’interruption à la sauvegarde de ce conteneur, et activer **Verify Backup?**.
+- Ajouter `/mnt/user/appdata/discord-wot-verify/.env` aux fichiers supplémentaires à sauvegarder : `--env-file` ne monte pas ce fichier dans le conteneur. Conserver les archives dans une destination privée.
+
+Lancer une sauvegarde manuelle et vérifier le journal : le chemin `data` doit figurer dans les volumes sauvegardés, entre l’arrêt et le redémarrage de `wot-verify`. Vérifier dans les archives la présence de `data/verify.sqlite3` et du `.env` dans la sauvegarde des fichiers supplémentaires. Cette sauvegarde couvre les données montées et le fichier ajouté, pas automatiquement tout le dépôt. Les archives `.deploy-backups` restent des sauvegardes avant mise à jour et ne remplacent pas une sauvegarde planifiée.
+
 ## Si la mise à jour échoue
 
 Après le début du remplacement, une erreur ou un contrôle de santé négatif déclenche une tentative de retour à l'ancien conteneur. Le script retire le nouveau, conserve les données de la tentative dans le sous-répertoire `failed-data` de la sauvegarde, restaure l'archive SQLite d'avant mise à jour et redémarre l'ancien conteneur. La restauration des données est nécessaire si le nouveau code a déjà appliqué des migrations.
