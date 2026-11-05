@@ -14,6 +14,7 @@ import aiohttp
 import discord
 from discord import app_commands
 
+from .reports import text as safe_text
 from .statistics import _snapshot, local_statistics
 from .wargaming import BATCH_SIZE, CONTACT_RANKS
 
@@ -54,6 +55,22 @@ LIVE_KEYS = (
     "changed_during_scan",
     "import_failed",
     "unsafe_role",
+)
+REPORT_ERRORS = frozenset(
+    {
+        "clan_changed",
+        "rank_lost",
+        "tag_mismatch",
+        "nickname_mismatch",
+        "wg_unknown",
+        "desynchronized",
+        "identity_conflict",
+        "contact_conflict",
+        "visitor_failed",
+        "changed_during_scan",
+        "import_failed",
+        "unsafe_role",
+    }
 )
 
 
@@ -472,14 +489,35 @@ def report_lines(bot, local, inspection=None, *, applying=False):
             ):
                 value = bot.t("status_disabled")
             lines.append(f"{bot.t('metric_' + key)}: {value}")
-        for review in sorted(inspection.reviews, key=lambda r: r.member_id):
-            reasons = [bot.t("metric_" + reason) for reason in dict.fromkeys(review.reasons)]
+        errors = []
+        for review in sorted(inspection.reviews, key=lambda r: (r.name.casefold(), r.member_id)):
+            reasons = [
+                bot.t("metric_" + reason)
+                for reason in dict.fromkeys(review.reasons)
+                if reason in REPORT_ERRORS
+            ]
             if not reasons:
-                reasons = [bot.t("admin_match")]
-            lines.append(
-                f"Discord {review.member_id} · WoT {review.account_id or '—'}: "
-                + "; ".join(reasons)
+                continue
+            stored = inspection.links.get(review.member_id)
+            nickname = review.nickname or (stored["nickname"] if stored else None)
+            account_id = review.account_id or (stored["account_id"] if stored else None)
+            wg_label = bot.t("admin_wot_stored") if stored and not review.nickname else "WoT"
+            errors.append(
+                bot.t("admin_player_error").format(
+                    discord_name=safe_text(" ".join(review.name.split()))
+                    if review.name
+                    else bot.t("admin_discord_absent"),
+                    discord_id=review.member_id,
+                    wg_label=wg_label,
+                    wg_name=safe_text(" ".join(nickname.split()))
+                    if nickname
+                    else bot.t("status_unknown"),
+                    account_id=account_id or "—",
+                    reasons="; ".join(reasons),
+                )
             )
+        lines.extend(["", bot.t("admin_errors_title")])
+        lines.extend(errors or [bot.t("admin_no_errors")])
     return lines
 
 

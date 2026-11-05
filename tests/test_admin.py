@@ -9,7 +9,7 @@ import pytest
 from discord import app_commands
 
 from wot_verify import admin
-from wot_verify.admin import Inspection, ReportView, report_file
+from wot_verify.admin import Inspection, ReportView, Review, report_file, report_lines
 from wot_verify.bot import VerifyBot
 from wot_verify.config import Config
 from wot_verify.i18n import CATALOGS
@@ -813,3 +813,92 @@ async def test_4141_members_and_638_players_need_only_14_wg_requests_per_phase(e
     assert env.bot.store.get(100)["account_id"] == 10000
     assert env.bot.store.get(737)["account_id"] == 10637
     assert env.bot.store.get(738) is None
+
+
+def test_report_lists_error_names_and_omits_matches_and_success_events(env):
+    inspection = Inspection(env.bot)
+    inspection.complete = inspection.discord_complete = True
+    errors = ("clan_changed", "rank_lost", "tag_mismatch", "nickname_mismatch")
+    for i, reason in enumerate(errors):
+        inspection.metrics[reason] = 1
+        inspection.reviews.append(
+            Review(
+                i + 7,
+                f"DiscordPlayer{i}",
+                {2},
+                account_id=i + 100,
+                nickname=f"WotPlayer{i}",
+                reasons=[reason, reason, "imported"],
+            )
+        )
+    inspection.metrics["imported"] = 5
+    inspection.reviews.extend(
+        [
+            Review(90, "MatchingPlayer", {2}, account_id=900, nickname="MatchingPlayer"),
+            Review(
+                91,
+                "ImportedPlayer",
+                {2},
+                account_id=901,
+                nickname="ImportedPlayer",
+                reasons=["imported", "contacts_imported", "visitor_removed"],
+            ),
+            Review(92, "AbsentOnly", set(), account_id=902, reasons=["linked_absent"]),
+        ]
+    )
+    before = list(env.bot.store.db.iterdump())
+    lines = report_lines(env.bot, {}, inspection, applying=True)
+    start = lines.index(env.bot.t("admin_errors_title")) + 1
+    details = lines[start:]
+    assert len(details) == len(errors)
+    for i, (reason, line) in enumerate(zip(errors, details, strict=True)):
+        assert f"DiscordPlayer{i}" in line
+        assert f"WotPlayer{i}" in line
+        assert f"ID {i + 7}" in line and f"ID {i + 100}" in line
+        assert line.count(env.bot.t("metric_" + reason)) == 1
+        assert env.bot.t("metric_imported") not in line
+    assert env.bot.t("metric_imported") + ": 5" in lines
+    assert not any("MatchingPlayer" in line or "ImportedPlayer" in line for line in lines)
+    assert list(env.bot.store.db.iterdump()) == before
+    env.bot.wg.lookup.assert_not_awaited()
+
+
+def test_report_distinguishes_unknown_and_stored_wot_names(env):
+    env.bot.store.link(9, "eu", 200, "SavedPlayer")
+    inspection = Inspection(env.bot)
+    inspection.reviews = [
+        Review(7, "MissingPlayer", {2}, reasons=["desynchronized"]),
+        Review(9, "", set(), reasons=["wg_unknown", "linked_absent"]),
+    ]
+    lines = report_lines(env.bot, {}, inspection)
+    missing = next(line for line in lines if "MissingPlayer" in line)
+    assert env.bot.t("status_unknown") in missing
+    assert "ID —" in missing
+    stored = next(line for line in lines if "SavedPlayer" in line)
+    assert env.bot.t("admin_wot_stored") in stored
+    assert env.bot.t("admin_discord_absent") in stored
+    assert "ID 9" in stored and "ID 200" in stored
+
+
+def test_error_names_cannot_inject_mentions_markdown_or_extra_lines(env):
+    inspection = Inspection(env.bot)
+    name = "**Discord**\n<@175972964527767553> @everyone"
+    nickname = "WoT_Name"
+    inspection.reviews = [
+        Review(7, name, {2}, account_id=100, nickname=nickname, reasons=["nickname_mismatch"]),
+    ]
+    lines = report_lines(env.bot, {}, inspection)
+    details = lines[lines.index(env.bot.t("admin_errors_title")) + 1 :]
+    assert len(details) == 1 and "\n" not in details[0]
+    assert "<@175972964527767553>" not in details[0] and "@everyone" not in details[0]
+    assert "**Discord**" not in details[0]
+    assert discord.utils.escape_markdown(nickname) in details[0]
+
+
+def test_report_without_errors_has_no_member_detail_rows(env):
+    inspection = Inspection(env.bot)
+    inspection.complete = inspection.discord_complete = True
+    inspection.reviews = [Review(7, "GoodPlayer", {2}, account_id=100, nickname="GoodPlayer")]
+    lines = report_lines(env.bot, {}, inspection)
+    details = lines[lines.index(env.bot.t("admin_errors_title")) + 1 :]
+    assert details == [env.bot.t("admin_no_errors")]
