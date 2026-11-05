@@ -5,6 +5,27 @@ import pytest
 from wot_verify.wargaming import Wargaming
 
 
+async def test_exact_account_search():
+    wg = Wargaming(None, "app", "eu")
+    wg.request = AsyncMock(return_value=[{"account_id": 42, "nickname": "Player"}])
+    assert await wg.find_exact("player") == (42, "Player")
+    wg.request.assert_awaited_once_with(
+        "account/list", data_type=list, search="player", type="exact", limit=100
+    )
+    wg.request.return_value = []
+    assert await wg.find_exact("missing") is None
+    wg.request.return_value = [{"account_id": True, "nickname": "Player"}]
+    with pytest.raises(ValueError, match="wg_error"):
+        await wg.find_exact("Player")
+
+
+async def test_exact_account_search_rejects_invalid_names_without_request():
+    wg = Wargaming(None, "app", "eu")
+    wg.request = AsyncMock()
+    assert await wg.find_exact("Player [TAG]") is None
+    wg.request.assert_not_awaited()
+
+
 @pytest.mark.parametrize("account", [None, {}, {"nickname": ""}, {"nickname": "x" * 33}])
 async def test_missing_account_or_invalid_nickname(account):
     wg = Wargaming(None, "app", "eu")

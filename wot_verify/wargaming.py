@@ -10,7 +10,7 @@ class Wargaming:
         self.session, self.app_id, self.region = session, app_id, region
         self.base = f"https://api.worldoftanks.{region}/wot"
 
-    async def request(self, endpoint, **params):
+    async def request(self, endpoint, *, data_type=dict, **params):
         try:
             async with self.session.post(
                 f"{self.base}/{endpoint}/",
@@ -22,13 +22,38 @@ class Wargaming:
             if (
                 not isinstance(payload, dict)
                 or payload.get("status") != "ok"
-                or not isinstance(payload.get("data"), dict)
+                or not isinstance(payload.get("data"), data_type)
             ):
                 raise ValueError
             return payload["data"]
         except (aiohttp.ClientError, TimeoutError, ValueError, TypeError):
             # Never include the URL, response body or access token in exceptions/logs.
             raise ValueError("wg_error") from None
+
+    async def find_exact(self, nickname):
+        """Look up one WoT account by its exact nickname, without guessing."""
+        if not isinstance(nickname, str) or not re.fullmatch(r"[A-Za-z0-9_]{3,24}", nickname):
+            return None
+        data = await self.request(
+            "account/list", data_type=list, search=nickname, type="exact", limit=100
+        )
+        matches = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                raise ValueError("wg_error")  # noqa: TRY004 - normalized API failure
+            name, account_id = entry.get("nickname"), entry.get("account_id")
+            if (
+                not isinstance(name, str)
+                or not 1 <= len(name) <= 24
+                or type(account_id) is not int
+                or not 0 < account_id < 2**63
+            ):
+                raise ValueError("wg_error")
+            if name.casefold() == nickname.casefold():
+                matches.append((account_id, name))
+        if len(matches) > 1:
+            raise ValueError("wg_error")
+        return matches[0] if matches else None
 
     async def nickname(self, account_id):
         data = await self.request("account/info", account_id=str(account_id), fields="nickname")
