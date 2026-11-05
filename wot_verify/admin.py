@@ -8,13 +8,14 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from itertools import batched
 
 import aiohttp
 import discord
 from discord import app_commands
 
 from .statistics import _snapshot, local_statistics
-from .wargaming import CONTACT_RANKS
+from .wargaming import BATCH_SIZE, CONTACT_RANKS
 
 IO_ERRORS = (discord.HTTPException, aiohttp.ClientError, OSError, ValueError, TimeoutError)
 log = logging.getLogger(__name__)
@@ -95,9 +96,6 @@ class Inspection:
         self.processed = 0
         self.partial = False
         self.enumerating = True
-        self._rate_lock = asyncio.Lock()
-        self._slots = asyncio.Semaphore(2)
-        self._next_call = 0.0
         with _snapshot(bot.store.db):
             self.links = {
                 row["discord_id"]: dict(row) for row in bot.store.db.execute("SELECT * FROM links")
@@ -107,15 +105,23 @@ class Inspection:
                 for row in bot.store.db.execute("SELECT * FROM clan_contacts")
             }
 
-    async def api(self, method, *args):
-        async with self._slots:
-            async with self._rate_lock:
-                now = time.monotonic()
-                await asyncio.sleep(max(0, self._next_call - now))
-                self._next_call = time.monotonic() + 0.5
-            return await method(*args)
+    async def lookup(self, members, absent=()):
+        names, ids = [], []
+        for member in members:
+            link = self.links.get(member.id)
+            if link is None:
+                names.append(nickname_parts(display_name(member))[0])
+            elif link["region"] == self.bot.config.region:
+                ids.append(link["account_id"])
+        clan_ids = [
+            self.links[i]["account_id"]
+            for i in absent
+            if self.links[i]["region"] == self.bot.config.region
+        ]
+        return await self.bot.wg.lookup(names, ids, clan_ids=clan_ids)
 
-    async def review(self, member, link=None):
+    async def review(self, member, link=None, *, wg=None):
+        wg = self.bot.wg if wg is None else wg
         config = self.bot.config
         roles = role_ids(member)
         result = Review(member.id, display_name(member), roles, linked=link is not None)
@@ -134,7 +140,7 @@ class Inspection:
                 result.reasons.append("unsafe_role")
         try:
             if link is None:
-                match = await self.api(self.bot.wg.find_exact, base)
+                match = await wg.find_exact(base)
                 if match is None:
                     result.reasons.append("desynchronized")
                     return result
@@ -144,9 +150,9 @@ class Inspection:
                     result.reasons.append("wg_unknown")
                     return result
                 result.account_id = link["account_id"]
-                result.nickname = await self.api(self.bot.wg.nickname, result.account_id)
+                result.nickname = await wg.nickname(result.account_id)
             try:
-                result.clan = await self.api(self.bot.wg.clan_membership, result.account_id)
+                result.clan = await wg.clan_membership(result.account_id)
             except IO_ERRORS:
                 result.reasons.append("wg_unknown")
                 return result
@@ -190,7 +196,8 @@ class Inspection:
                 )
         return result
 
-    async def review_absent_contact(self, discord_id):
+    async def review_absent_contact(self, discord_id, *, wg=None):
+        wg = self.bot.wg if wg is None else wg
         link = self.links[discord_id]
         result = Review(discord_id, "", set(), account_id=link["account_id"], linked=True)
         result.reasons.append("linked_absent")
@@ -198,7 +205,7 @@ class Inspection:
             result.reasons.append("wg_unknown")
             return result
         try:
-            result.clan = await self.api(self.bot.wg.clan_membership, link["account_id"])
+            result.clan = await wg.clan_membership(link["account_id"])
         except IO_ERRORS:
             result.reasons.append("wg_unknown")
             return result
@@ -213,6 +220,7 @@ class Inspection:
         return result
 
     async def scan(self, guild):
+        await asyncio.sleep(0)
         try:
             async for member in guild.fetch_members(limit=None):
                 self.members[member.id] = member
@@ -260,33 +268,26 @@ class Inspection:
             else []
         )
         self.total = len(targets) + len(absent_contacts)
-        queue = asyncio.Queue()
-        for member in targets:
-            queue.put_nowait((member.id, member))
-        for discord_id in absent_contacts:
-            queue.put_nowait((discord_id, None))
-
-        async def worker():
-            while not queue.empty():
-                discord_id, member = queue.get_nowait()
+        rows = [(member.id, member) for member in targets]
+        rows.extend((discord_id, None) for discord_id in absent_contacts)
+        for group in batched(rows, BATCH_SIZE):
+            wg = await self.lookup(
+                [member for _, member in group if member is not None],
+                [discord_id for discord_id, member in group if member is None],
+            )
+            for discord_id, member in group:
                 review = (
-                    await self.review(member, self.links.get(discord_id))
+                    await self.review(member, self.links.get(discord_id), wg=wg)
                     if member is not None
-                    else await self.review_absent_contact(discord_id)
+                    else await self.review_absent_contact(discord_id, wg=wg)
                 )
                 self.reviews.append(review)
                 self.processed += 1
                 for reason in set(review.reasons):
                     if reason != "linked_absent":
                         self.metrics[reason] += 1
-
-        workers = [asyncio.create_task(worker()) for _ in range(2)]
-        try:
-            await asyncio.gather(*workers)
-        finally:
-            for task in workers:
-                task.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
+            # Yield even when the snapshot answers without network I/O.
+            await asyncio.sleep(0)
         self.resolve_conflicts()
         self.complete = self.discord_complete
 
@@ -330,6 +331,7 @@ class Inspection:
         # A partial Discord enumeration cannot establish duplicate candidates safely.
         if not self.complete:
             return
+        pending = []
         for review in self.reviews:
             if not review.valid or self.bot.config.role_id not in review.roles:
                 continue
@@ -345,93 +347,107 @@ class Inspection:
                 # The scan already checked this player. Rechecking completed rows
                 # here can consume every retry's deadline before pending imports.
                 continue
-            try:
+            pending.append(review)
+        for group in batched(pending, BATCH_SIZE):
+            fresh = {}
+            for review in group:
+                try:
+                    fresh[review.member_id] = await self.bot.member(review.member_id)
+                except IO_ERRORS:
+                    self.metrics["import_failed"] += 1
+                    review.reasons.append("import_failed")
+            wg = await self.lookup(list(fresh.values()))
+            for review in group:
+                if review.member_id in fresh:
+                    await self.apply_review(review, fresh[review.member_id], wg)
+
+    async def apply_review(self, review, fresh, wg):
+        try:
+            checked = await self.review(fresh, self.links.get(review.member_id), wg=wg)
+            if "wg_unknown" in checked.reasons:
+                self.metrics["wg_unknown"] += 1
+                self.metrics["import_failed"] += 1
+                review.reasons.extend(["wg_unknown", "import_failed"])
+                return
+            if "unsafe_role" in checked.reasons and not checked.valid:
+                self.metrics["unsafe_role"] += 1
+                self.metrics["import_failed"] += 1
+                review.reasons.extend(["unsafe_role", "import_failed"])
+                return
+            async with self.bot.lock:
                 fresh = await self.bot.member(review.member_id)
-                checked = await self.review(fresh, self.links.get(review.member_id))
-                if "wg_unknown" in checked.reasons:
-                    self.metrics["wg_unknown"] += 1
-                    self.metrics["import_failed"] += 1
-                    review.reasons.extend(["wg_unknown", "import_failed"])
-                    continue
-                if "unsafe_role" in checked.reasons and not checked.valid:
+                if (
+                    role_ids(fresh) != review.roles
+                    or display_name(fresh) != review.name
+                    or not checked.valid
+                    or checked.account_id != review.account_id
+                    or (
+                        review.contact_valid
+                        and (not checked.contact_valid or checked.clan != review.clan)
+                    )
+                ):
+                    self.metrics["changed_during_scan"] += 1
+                    review.reasons.append("changed_during_scan")
+                    return
+                current = self.bot.store.get(review.member_id)
+                snapshot = self.links.get(review.member_id)
+                if (dict(current) if current else None) != snapshot:
+                    self.metrics["changed_during_scan"] += 1
+                    review.reasons.append("changed_during_scan")
+                    return
+                had_contact = self.bot.store.contact(review.member_id) is not None
+                try:
+                    self.bot.role(fresh)
+                except ValueError:
                     self.metrics["unsafe_role"] += 1
-                    self.metrics["import_failed"] += 1
-                    review.reasons.extend(["unsafe_role", "import_failed"])
-                    continue
-                async with self.bot.lock:
-                    fresh = await self.bot.member(review.member_id)
-                    if (
-                        role_ids(fresh) != review.roles
-                        or display_name(fresh) != review.name
-                        or not checked.valid
-                        or checked.account_id != review.account_id
-                        or (
-                            review.contact_valid
-                            and (not checked.contact_valid or checked.clan != review.clan)
-                        )
-                    ):
-                        self.metrics["changed_during_scan"] += 1
-                        review.reasons.append("changed_during_scan")
-                        continue
-                    current = self.bot.store.get(review.member_id)
-                    snapshot = self.links.get(review.member_id)
-                    if (dict(current) if current else None) != snapshot:
-                        self.metrics["changed_during_scan"] += 1
-                        review.reasons.append("changed_during_scan")
-                        continue
-                    had_contact = self.bot.store.contact(review.member_id) is not None
+                    review.reasons.append("unsafe_role")
+                    return
+                # A clan conflict never prevents an independently valid player link.
+                clan = checked.clan if review.contact_valid else None
+                if clan:
                     try:
-                        self.bot.role(fresh)
+                        self.bot.contact_role(fresh)
                     except ValueError:
+                        clan = None
                         self.metrics["unsafe_role"] += 1
                         review.reasons.append("unsafe_role")
-                        continue
-                    # A clan conflict never prevents an independently valid player link.
-                    clan = checked.clan if review.contact_valid else None
-                    if clan:
-                        try:
-                            self.bot.contact_role(fresh)
-                        except ValueError:
-                            clan = None
-                            self.metrics["unsafe_role"] += 1
-                            review.reasons.append("unsafe_role")
-                    if clan:
-                        owner = self.bot.store.clan_contact(self.bot.config.region, clan[0])
-                        existing = self.bot.store.contact(review.member_id)
-                        if (owner and owner["discord_id"] != review.member_id) or (
-                            existing
-                            and (existing["region"], existing["clan_id"])
-                            != (self.bot.config.region, clan[0])
-                        ):
-                            clan = None
-                            review.reasons.append("contact_conflict")
-                            self.metrics["contact_conflict"] += 1
-                    self.bot.store.import_player(
-                        review.member_id,
-                        self.bot.config.region,
-                        checked.account_id,
-                        checked.nickname,
-                        clan_id=clan[0] if clan else None,
-                        tag=clan[2] if clan else None,
-                    )
-                    if current is None:
-                        self.metrics["imported"] += 1
-                        review.reasons.append("imported")
-                    if clan and not had_contact:
-                        self.metrics["contacts_imported"] += 1
-                        review.reasons.append("contacts_imported")
-                    if getattr(self.bot.config, "visitor_role_id", 0) in role_ids(fresh):
-                        try:
-                            await self.bot.sync_visitor_role(fresh, player=True)
-                        except IO_ERRORS:
-                            self.metrics["visitor_failed"] += 1
-                            review.reasons.append("visitor_failed")
-                        else:
-                            self.metrics["visitor_removed"] += 1
-                            review.reasons.append("visitor_removed")
-            except IO_ERRORS:
-                self.metrics["import_failed"] += 1
-                review.reasons.append("import_failed")
+                if clan:
+                    owner = self.bot.store.clan_contact(self.bot.config.region, clan[0])
+                    existing = self.bot.store.contact(review.member_id)
+                    if (owner and owner["discord_id"] != review.member_id) or (
+                        existing
+                        and (existing["region"], existing["clan_id"])
+                        != (self.bot.config.region, clan[0])
+                    ):
+                        clan = None
+                        review.reasons.append("contact_conflict")
+                        self.metrics["contact_conflict"] += 1
+                self.bot.store.import_player(
+                    review.member_id,
+                    self.bot.config.region,
+                    checked.account_id,
+                    checked.nickname,
+                    clan_id=clan[0] if clan else None,
+                    tag=clan[2] if clan else None,
+                )
+                if current is None:
+                    self.metrics["imported"] += 1
+                    review.reasons.append("imported")
+                if clan and not had_contact:
+                    self.metrics["contacts_imported"] += 1
+                    review.reasons.append("contacts_imported")
+                if getattr(self.bot.config, "visitor_role_id", 0) in role_ids(fresh):
+                    try:
+                        await self.bot.sync_visitor_role(fresh, player=True)
+                    except IO_ERRORS:
+                        self.metrics["visitor_failed"] += 1
+                        review.reasons.append("visitor_failed")
+                    else:
+                        self.metrics["visitor_removed"] += 1
+                        review.reasons.append("visitor_removed")
+        except IO_ERRORS:
+            self.metrics["import_failed"] += 1
+            review.reasons.append("import_failed")
 
 
 def report_lines(bot, local, inspection=None, *, applying=False):
