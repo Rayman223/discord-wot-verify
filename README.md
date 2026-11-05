@@ -1,77 +1,122 @@
 # WoT Verify
 
-<img src="assets/branding/wot-verify-avatar.png" alt="Logo WoT Verify : char et coche de vérification" width="160" height="160">
+<img src="assets/branding/wot-verify-avatar.png" alt="WoT Verify logo: tank and verification check mark" width="160" height="160">
 
-Bot Discord indépendant de Battle-Conquest : vérification d'un compte World of Tanks PC EU, attribution du rôle existant **joueur** et synchronisation du pseudo. Interface disponible en anglais et en français, configurable avec `LOCALE=en` (par défaut) ou `LOCALE=fr`. Les messages sont centralisés dans `wot_verify/locales/`.
+A Discord bot independent of Battle-Conquest: verify a World of Tanks PC EU account, assign the existing **player** role and synchronize the member's nickname. The interface supports English and French through `LOCALE=en` (default) or `LOCALE=fr`. Messages are centralized in `wot_verify/locales/`.
 
-Le [logo du bot](assets/branding/wot-verify-avatar.png) est prêt à être importé comme avatar Discord. Voir les [instructions d’installation du logo](assets/branding/README.md).
+The [bot logo](assets/branding/wot-verify-avatar.png) is ready to upload as a Discord avatar. See the [logo installation instructions](assets/branding/README.md) (French). The linked deployment and protocol guides remain in French.
 
-## Fonctionnement
+## How it works
 
-Avec `VISITOR_ROLE_ID` configuré, l’attribution du rôle **joueur** retire le rôle **visiteur**. Le retrait de **joueur** rétablit **visiteur**, y compris lors de `/unlink`, `/admin_unlink` et des modifications manuelles dans Discord. La vérification, `/resync` et le retour d’un joueur lié sur le serveur appliquent aussi cette bascule. Les autres rôles sont préservés. Le retrait du rôle contact de clan seul ne rend pas le membre visiteur.
+An administrator posts the persistent panel in **#verification** with `/setup`. Its button privately returns a login link valid for ten minutes. The player authenticates with Wargaming; the server checks the OpenID 2.0 assertion with Wargaming's `check_authentication` and retrieves the nickname through the public `account/info` API. Account IDs and nicknames supplied directly in the callback URL are never accepted as proof.
 
-Dans `.env`, ajouter `VISITOR_ROLE_ID=475356542716084238` pour ce serveur, ou `0` pour désactiver cette fonction. Le rôle visiteur doit être distinct de joueur et contact de clan, sans permission Administrateur, et placé sous le rôle du bot. Après modification, recréer le conteneur avec le script de mise à jour habituel. `/diagnose` contrôle aussi ce rôle. Les membres déjà joueurs peuvent utiliser `/resync` pour retirer un rôle visiteur encore présent ; le contrôle périodique applique également la bascule lors de la prochaine synchronisation.
+Links are unique in both directions and stored in SQLite. Changing a link requires `/unlink` followed by verification. No Wargaming access token is requested or stored. The player role can be assigned even if Discord subsequently refuses the nickname change; the link is retained and `/resync` retries after permissions have been fixed.
 
-Si Discord refuse la bascule, les commandes signalent l’échec et conservent la liaison pour permettre une nouvelle tentative. Une modification manuelle refusée est consignée dans les logs du bot ; après correction des permissions, réattribuer puis retirer le rôle joueur, ou réessayer la déliaison. Les membres absents ne reçoivent pas de rôle à distance.
+### Player and visitor roles
 
-Un administrateur poste le panneau avec `/setup` dans **#verification**. Le bouton persistant répond en privé avec un lien valable dix minutes. Le joueur s'authentifie chez Wargaming ; le serveur vérifie son assertion OpenID 2.0 par `check_authentication` auprès de Wargaming et récupère le pseudo avec l’API publique `account/info`. Les identifiants et pseudos fournis directement dans l'URL de retour ne sont jamais utilisés comme preuve.
+When `VISITOR_ROLE_ID` is configured, assigning the **player** role removes the **visitor** role. Removing **player** restores **visitor**, including `/unlink`, `/admin_unlink` and manual Discord role changes. Verification, `/resync` and the return of a linked player also apply this switch. Other roles are preserved. Removing only the clan contact role does not make the member a visitor.
 
-Les liaisons sont uniques dans les deux sens et persistées en SQLite. Une nouvelle liaison nécessite `/unlink` puis une vérification. Aucun token Wargaming n’est demandé ni conservé. Le rôle peut être attribué même si Discord refuse ensuite le renommage ; la liaison est conservée et `/resync` permet de réessayer après correction des permissions.
+For the original server, add `VISITOR_ROLE_ID=475356542716084238` to `.env`, or use `0` to disable the feature. The visitor role must be different from the player and clan contact roles, must not have Administrator permissions and must be below the bot's highest role. After changing configuration, recreate the container with the normal update script. `/diagnose` checks this role too. Existing players can use `/resync` to remove a leftover visitor role; the periodic check also applies the switch at the next synchronization.
 
-Après confirmation de l’attribution du rôle joueur, le bot publie aussi un message dans le salon du panneau enregistré (ou le salon d’origine du bouton si aucun panneau n’est enregistré). Le message est automatiquement supprimé après 30 secondes et mentionne uniquement le joueur, affiche le nom du rôle en texte simple, sans mention de rôle et reste traduit selon `LOCALE`. Il est envoyé une seule fois par liaison, même après redémarrage ou nouvelle tentative ; une déliaison permet une nouvelle confirmation à la prochaine vérification. Si seul le renommage échoue, le rôle est confirmé et le message propose `/resync`. Un refus d’attribution du rôle ne produit aucune confirmation de réussite. Une panne d’envoi au salon n’annule pas la vérification : l’envoi reste en attente et sera retenté lors d’une synchronisation suivante. Les anciennes liaisons ne génèrent pas de messages rétroactifs sans nouvelle vérification depuis le panneau.
+If Discord rejects the switch, commands report the failure and retain the link for another attempt. Failed manual role changes are recorded in the bot logs. After fixing permissions, assign and remove the player role again, or retry unlinking. Absent members cannot receive roles remotely.
 
-La prise du rôle de contact de clan publie également une confirmation dans ce salon, supprimée automatiquement après 30 secondes et affichant le nom du rôle en texte simple, avec le tag du clan et une mention du joueur uniquement. Une confirmation est envoyée par réservation de contact ; un retrait puis une nouvelle attribution permet un nouveau message. Les échecs d’attribution ou une place déjà occupée n’annoncent aucun succès. L’état est conservé après redémarrage, et un échec d’envoi peut être retenté avec le bouton ou `/resync` tant que le rôle et la réservation sont valides.
+### Public confirmations and returning to Discord
 
-Les réponses aux commandes et aux boutons restent privées. La suppression des confirmations publiques est planifiée par le bot : un arrêt du conteneur pendant ces 30 secondes ou un refus de suppression par Discord peut laisser le message visible.
+Once the player role has been confirmed, the bot posts a confirmation in the saved panel's channel, or in the button's original channel if no panel is saved. It mentions only the player and displays the role name as plain text, without mentioning the role. Messages follow `LOCALE` and are automatically deleted after 30 seconds.
 
-Les pages de retour proposent **Return to Discord**, qui ouvre le salon du bouton d'origine. Le salon est inclus dans l'état signé ; aucun token WG n'est transmis à Discord. Les anciens liens encore valides reviennent au serveur. En cas de renommage interdit, la page confirme la liaison et le rôle attribué, puis explique que le membre peut conserver son pseudo sans modifier la hiérarchie du serveur.
+One player confirmation is sent per link, including across restarts and retries. Unlinking allows a new confirmation on the next verification. If only renaming fails, the confirmation explains that `/resync` can retry it. A failed role assignment never produces a success message. Failure to send to the channel does not undo verification: delivery remains pending and is retried during a later synchronization. Old links do not generate retroactive confirmations without a new panel verification.
 
-| Commande | Accès | Effet |
+Claiming the clan contact role also posts a confirmation in this channel, with the clan tag, a plain-text role name and only a player mention. One message is sent per reservation; removing and reclaiming it allows another. Role assignment failures and occupied clan slots never announce success. State survives restarts, and failed delivery can be retried with the button or `/resync` while the role and reservation remain valid.
+
+Command and button replies remain private. The bot schedules deletion of public confirmations: stopping the container during those 30 seconds, or Discord denying deletion, can leave a message visible.
+
+Callback pages offer **Return to Discord**, opening the original button's channel. The channel is included in the signed state; no Wargaming token is passed to Discord. Older valid links return to the server. If renaming is forbidden, the page confirms the link and role and explains that the member can keep their nickname without changing the server hierarchy.
+
+## Commands
+
+| Command | Access | Effect |
 | --- | --- | --- |
-| `/status` | Membre | Affiche en privé son compte lié, son clan actuel et l’état des rôles et du pseudo, sans modification. |
-| `/diagnose` | Administrateur | Vérifie en privé les rôles configurés, la hiérarchie et les permissions du bot et du salon. |
-| `/setup` | Administrateur | Poste le panneau dans le salon courant. |
-| `/resync` | Membre | Actualise rôle et pseudo ; une demande par minute. |
-| `/unlink confirm:True` | Membre | Retire le rôle et la liaison ; conserve le pseudo actuel. |
-| `/admin_unlink discord_id:…` | Administrateur | Supprime une liaison à partir de l'ID Discord. |
-| `/admin_unlink account_id:…` | Administrateur | Supprime une liaison à partir de l'ID WoT. |
-| `/admin_contact_remove discord_id:…` | Manage Roles | Retire le contact de clan et libère la place après vérification manuelle. |
-| `/contacts page:1` | Manage Roles | Examine cinq contacts de clan par page, en privé et sans retrait automatique. |
+| `/status` | Member | Privately shows the member's linked account, current clan, roles and nickname state without making changes. |
+| `/diagnose` | Administrator | Privately checks configured roles, hierarchy and bot/channel permissions. |
+| `/stats` | Administrator | Shows database figures, then completes the private report with live Discord/Wargaming checks. |
+| `/admin_import_players` | Administrator | Previews importing existing player and clan contact roles without changing anything. |
+| `/admin_import_players confirm:True` | Administrator | Rechecks and imports eligible identities and clan reservations, then removes leftover visitor roles. |
+| `/setup` | Administrator | Posts or updates the verification panel in the current channel. |
+| `/resync` | Member | Refreshes roles and nickname; one request per minute. |
+| `/unlink confirm:True` | Member | Removes the roles and link; clan contact suffix cleanup follows the rules below. |
+| `/admin_unlink discord_id:…` | Administrator | Removes a link by Discord ID. |
+| `/admin_unlink account_id:…` | Administrator | Removes a link by WoT account ID. |
+| `/admin_contact_remove discord_id:…` | Manage Roles | Removes a clan contact and frees the slot after manual review. |
+| `/contacts page:1` | Manage Roles | Privately reviews five clan contacts per page without automatic removal. |
 
-Le second bouton **Become a clan contact** vérifie les grades de commandant, commandant en second ou officier de recrutement, attribue un rôle distinct et applique le pseudo `PseudoWG [TAG]`. Un seul contact est autorisé par clan ; un second candidat est orienté vers un modérateur pour vérification manuelle. Activer avec `CLAN_CONTACT_ROLE_ID` dans `.env`, puis publier le panneau avec `/setup`. Voir le [guide des contacts de clan](docs/clan-contacts.md) pour la configuration et les limites.
+Administrator IDs are entered as text to avoid rounding large Discord IDs. Give exactly one target parameter to `/admin_unlink`. Permissions are checked at execution as well as through command visibility restrictions. An administrator can release a link after a member has left or been banned. If a present member's role cannot be removed, the link is retained for a retry.
 
-`/status` consulte uniquement le compte du membre qui lance la commande, avec une limite d’une demande par 30 secondes. Le pseudo enregistré et la date de dernière synchronisation sont distingués des informations Wargaming actuelles. Une panne Wargaming est indiquée comme une information indisponible, jamais comme une absence de clan. Les écarts proposent `/resync` ou une revue par un modérateur ; aucune correction n’est automatique.
+`/status` only inspects the invoking member's account, with one request per 30 seconds. Stored nicknames and the last successful synchronization are distinguished from current Wargaming data. A Wargaming outage means unavailable information, never “no clan.” Discrepancies suggest `/resync` or moderator review; no correction is automatic.
 
-`/diagnose` est réservé aux administrateurs, avec contrôle à l’exécution. Il vérifie les permissions **Manage Roles** et **Manage Nicknames**, les rôles joueur/contact (existence, sécurité, hiérarchie) et les permissions **Read Message History**, **View Channel** / **Send Messages** du salon courant (ou **Send Messages in Threads** dans un fil). Le rôle contact désactivé est signalé comme facultatif. Les permissions des autres salons et la position de chaque membre ne sont pas inspectées ; le diagnostic explique les limites de renommage Discord. Aucun secret ni lien de connexion n’est affiché. Après déploiement, les deux nouvelles commandes sont synchronisées automatiquement au démarrage ; aucune nouvelle variable ou migration n’est nécessaire.
+`/diagnose` checks **Manage Roles**, **Manage Nicknames**, the player/contact/visitor roles (existence, safety and hierarchy), and **Read Message History**, **View Channel** and **Send Messages** in the current channel, or **Send Messages in Threads** in a thread. Disabled optional roles are reported as such. It does not inspect every channel's permissions or every member's hierarchy; it explains Discord's nickname restrictions. No secrets or login links are displayed. Commands synchronize automatically at startup.
 
-Les identifiants des commandes administrateur sont saisis en texte pour éviter les arrondis sur les grands IDs Discord. Donner exactement l'un des deux paramètres. Les permissions sont vérifiées à l'exécution, en plus des restrictions d'affichage des commandes. Un administrateur peut libérer une liaison même après le départ ou le bannissement du membre. Si le membre est présent et que le retrait du rôle échoue, la liaison est conservée pour permettre une nouvelle tentative.
+A daily check refreshes links whose last successful synchronization was at least 30 days ago, including links never successfully synchronized. Failures are retried at the next check. Discord removes roles when a member leaves; on return, the bot restores the player role and requests `/resync` by DM. If DMs are closed, the command is still available in the server. Links for absent members remain until explicitly deleted.
 
-Un contrôle quotidien actualise les liaisons dont la dernière synchronisation réussie remonte à 30 jours ; les échecs sont retentés au contrôle suivant. Discord supprime les rôles d'un membre qui quitte le serveur : à son retour, le bot restaure le rôle et lui demande `/resync` par message privé. Si les MP sont fermés, la commande reste disponible dans le serveur. Les liaisons des membres absents sont conservées jusqu'à suppression explicite.
+### Clan contacts
 
-## Installation / déploiement Unraid et SWAG
+The second panel button, **Become a clan contact**, checks for commander, executive officer or recruitment officer rank, assigns a separate role and uses the nickname `WargamingNickname [TAG]`. Only one contact is allowed per clan. A second candidate is referred to a moderator for manual verification; no existing reservation is replaced. Enable it with `CLAN_CONTACT_ROLE_ID` in `.env`, then publish the panel with `/setup`. See the [clan contacts guide](docs/clan-contacts.md) for configuration and limitations.
 
-### 1. Créer les applications et le salon
+### Statistics and importing existing players
 
-1. Dans le [portail développeur Discord](https://discord.com/developers/applications), créer une application **WoT Verify** et son bot. Dans **Bot**, activer **Server Members Intent** ; ne pas activer Message Content. Copier le token directement dans le fichier `.env` du serveur, jamais dans GitHub ou un message.
-2. Dans **Installation / OAuth2 URL Generator**, choisir **Guild Install**, les scopes `bot` et `applications.commands`, et les permissions **View Channels**, **Send Messages**, **Read Message History**, **Manage Roles**, **Manage Nicknames**. Inviter le bot sur le serveur cible. Ne pas lui donner Administrator.
-3. Placer le rôle du bot au-dessus du rôle **joueur** et de tous les rôles des membres à renommer. Discord interdit de renommer le propriétaire du serveur et les membres au-dessus du bot. Le rôle joueur ne doit être ni géré par une intégration, ni `@everyone`, ni administrateur.
-4. Activer le mode développeur Discord ; copier l'ID du serveur et l'ID du rôle existant **joueur** dans `GUILD_ID` et `ROLE_ID`.
-5. Créer le salon texte **#verification**, visible par les membres à vérifier. Autoriser le bot à y voir le salon et envoyer des messages. Vérifier les surcharges de permissions du salon. Exécuter `/setup` après le démarrage du bot.
-6. Dans [Wargaming Developer Room](https://developers.wargaming.net/applications/), créer une application serveur pour World of Tanks EU. Copier son `application_id` dans `WG_APP_ID`. L’application API sert uniquement à lire les pseudos publics ; la connexion OpenID directe ne requiert pas de redirect URI dans cette application. Le callback reste `https://discord-auth.battle-conquest.eu/callback`, lié à `PUBLIC_URL`.
+`/stats` first attaches the local figures, then updates the same private message after inspecting Discord and Wargaming. The UTF-8 text attachment contains the complete figures and per-member results without active mentions. Local values describe the snapshot at the start of the operation, not a lifetime event history.
 
-### 2. Domaine, réseau et configuration
+The report includes:
 
-1. Faire pointer `discord-auth.battle-conquest.eu` vers le serveur SWAG et inclure ce sous-domaine dans son certificat TLS. Les ports publics 80/443 arrivent sur SWAG ; ne pas exposer 8080 sur Internet.
-2. Utiliser un réseau Docker personnalisé commun à SWAG et au bot. Par exemple, s'il n'existe pas déjà :
+- **Players and clans:** linked players, clan contacts, represented clans and linked players with or without a contact reservation.
+- **Synchronization:** never synchronized, synchronized within 30 days, due for periodic synchronization, and the oldest/latest successful synchronization in UTC. “Due” includes never-synchronized links.
+- **Failures:** members with unresolved or repeated failures, sum/maximum of retained counters, and members with an alert recorded within 24 hours. Recording an alert is not proof of delivery.
+- **Confirmations:** retained player/contact messages delivered or pending, separately. These are retained records, not lifetime totals.
+- **Web verification:** valid/expired challenges, unexpired/expired retry sessions, usable/waiting/exhausted retries, and retained OpenID nonces. Exhausted sessions are counted separately within unexpired sessions.
+- **Technical state:** saved panels, tracked tags and affected members, potential tag cleanup without a reservation, orphan contact reservations, applied migrations and logical SQLite size excluding WAL/SHM files.
+- **Live consistency:** linked players present/absent, player/visitor/contact role holders, player roles without links, linked members without player roles, combined player/visitor roles, contacts without player roles, reservations without contact roles and the reverse, changed clans, ineligible ranks, incorrect/missing tags and nickname discrepancies. Unlinked player roles are checked for exact WoT matches and classified as importable, desynchronized or unknown/conflicting.
+
+There is no regional breakdown: the intended deployment is EU. Historical trends, daily signups, unlink counts, success rates and verification durations are not recorded by this feature. Existing identities from another configured region are reported as unavailable rather than queried against the wrong API.
+
+`/admin_import_players` previews existing human members with the player role. It uses their server nickname, or their Discord display name if no server nickname is set, and looks for an exact EU WoT account match (case insensitive, without approximate matching). A trailing `[TAG]` is accepted only when Wargaming confirms that clan tag. No match is reported as **desynchronized**; API errors remain **unknown**. A contact role without the player role is reported but does not grant or import a player role.
+
+Review the attachment, then run `/admin_import_players confirm:True` to repeat the checks and apply valid matches. This is an administrative import based on existing roles and names, **not individual OpenID authentication**. Only administrators should run it after reviewing the server's existing role assignments.
+
+The import:
+
+- Creates missing links without replacing existing links or assigning a WoT account already owned by another member. Duplicate candidates for an unclaimed account are all skipped.
+- Imports a clan contact reservation only when the member has both roles, the tag matches, the rank is authorized and the clan slot is free. Duplicate candidates for a free clan slot are skipped. A contact conflict does not prevent an independently valid player link.
+- Rechecks identity, roles and database state before writing. A changed member is skipped. Existing reservations are never silently transferred.
+- Removes a leftover visitor role for a matching player. A failed removal is reported separately and leaves the valid link in place for a retry.
+- Does not rename members, remove player/contact roles, create a “desynchronized” role or post public verification confirmations. Imported links remain never-synchronized until normal `/resync` or the periodic check completes.
+
+Both commands share a single running-operation guard per server and a 60-second interval between starts. Wargaming requests are limited to two concurrent calls and two starts per second. An operation stops after ten minutes and explicitly reports partial coverage. Missing API information is not counted as an absent account/clan. An incomplete Discord enumeration never establishes absence and prevents application of that import scan. If application itself is interrupted, already completed imports remain; rerunning is idempotent. Counts of observed roles are partial when Discord enumeration is incomplete.
+
+These features use the existing schema and configuration. No new migration or environment variable is needed. After deployment, let command synchronization finish at startup, run `/stats`, inspect an import preview, then apply only the reviewed eligible players.
+
+## Installation / deployment with Unraid and SWAG
+
+### 1. Create the applications and channel
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create a **WoT Verify** application and bot. Under **Bot**, enable **Server Members Intent**; leave Message Content disabled. Copy the token directly into the server's `.env`, never into GitHub or a message.
+2. Under **Installation / OAuth2 URL Generator**, choose **Guild Install**, the `bot` and `applications.commands` scopes, and **View Channels**, **Send Messages**, **Read Message History**, **Manage Roles**, **Manage Nicknames** permissions. Invite the bot to the target server. Do not grant Administrator.
+3. Place the bot's highest role above the existing **player** role and every member it must rename. Discord prevents renaming the server owner and members above the bot. The player role must not be integration-managed, `@everyone` or Administrator.
+4. Enable Discord Developer Mode; copy the server ID and the existing **player** role ID into `GUILD_ID` and `ROLE_ID`.
+5. Create a **#verification** text channel visible to members who need verification. Allow the bot to view and send in it, including channel permission overrides. Run `/setup` after startup.
+6. In [Wargaming Developer Room](https://developers.wargaming.net/applications/), create a server application for World of Tanks EU. Copy its `application_id` into `WG_APP_ID`. The API application reads public nicknames and clan information. Direct OpenID login requires no redirect URI in that application. The callback remains `https://discord-auth.battle-conquest.eu/callback`, derived from `PUBLIC_URL`.
+
+### 2. Domain, networking and configuration
+
+1. Point `discord-auth.battle-conquest.eu` to the SWAG server and include this subdomain in its TLS certificate. Public ports 80/443 go to SWAG; do not expose 8080 to the Internet.
+2. Use a custom Docker network shared by SWAG and the bot. For example, if it does not exist:
 
    ```bash
    docker network create swag
    docker network connect swag swag
    ```
 
-   Le second `swag` désigne ici le nom du conteneur SWAG : l'adapter. Sur Unraid, rendre cette connexion persistante dans le modèle du conteneur SWAG. Si le réseau porte un autre nom, définir `SWAG_NETWORK` dans `.env`.
+   The second `swag` is the SWAG container name: adjust it. On Unraid, make the connection persistent in the SWAG container template. If the network has another name, set `SWAG_NETWORK` in `.env`.
 
-3. Installer le dépôt sur un stockage persistant Unraid :
+3. Install the repository on persistent Unraid storage:
 
    ```bash
    cd /mnt/user/appdata
@@ -85,23 +130,23 @@ Un contrôle quotidien actualise les liaisons dont la dernière synchronisation 
    chmod 700 data
    ```
 
-4. Renseigner `.env` : `DISCORD_TOKEN`, `WG_APP_ID`, `STATE_SECRET` avec le secret généré, `GUILD_ID`, `ROLE_ID`. Conserver `PUBLIC_URL=https://discord-auth.battle-conquest.eu`, `WG_REGION=eu`, `DATABASE_PATH=/data/verify.sqlite3`, `PORT=8080`. Ne jamais publier ce fichier. Une rotation de `STATE_SECRET` invalide les liens de vérification en cours, sans supprimer les liaisons.
-5. Copier `deploy/discord-auth.subdomain.conf` dans `/config/nginx/proxy-confs/` du conteneur SWAG (chemin hôte selon ton installation), puis vérifier et recharger :
+4. Fill in `.env`: `DISCORD_TOKEN`, `WG_APP_ID`, `STATE_SECRET` using the generated secret, `GUILD_ID` and `ROLE_ID`. Keep `PUBLIC_URL=https://discord-auth.battle-conquest.eu`, `WG_REGION=eu`, `DATABASE_PATH=/data/verify.sqlite3`, `PORT=8080`. Never publish this file. Rotating `STATE_SECRET` invalidates pending verification links without deleting account links.
+5. Copy `deploy/discord-auth.subdomain.conf` into `/config/nginx/proxy-confs/` inside SWAG (host path depends on your installation), then validate and reload:
 
    ```bash
    docker exec swag nginx -t
    docker exec swag nginx -s reload
    ```
 
-   Le fichier fourni désactive les logs HTTP sur ce vhost : le callback contient une assertion OpenID et un état temporaire. Ne pas ajouter de journalisation des URL complètes via un proxy, WAF ou service externe en amont. Les logs applicatifs ne contiennent ni tokens ni URL de callback.
+   The supplied configuration disables HTTP logs for this vhost: callbacks contain an OpenID assertion and temporary state. Do not add full-URL logging through an upstream proxy, WAF or external service. Application logs contain neither tokens nor callback URLs.
 
-### Langue de l’interface
+### Interface language
 
-Ajouter `LOCALE=fr` au fichier `.env` pour utiliser le français, ou `LOCALE=en` pour l’anglais (valeur par défaut). La langue s’applique à toute l’instance : messages privés, boutons, descriptions des commandes et pages de retour. Les noms des commandes et leurs paramètres restent identiques, ainsi que les pseudos Wargaming et les tags de clan. Une valeur non prise en charge bloque le démarrage avec une erreur explicite.
+Set `LOCALE=fr` in `.env` for French, or `LOCALE=en` for English (default). The language applies to the entire instance: private messages, buttons, command descriptions and callback pages. Command names/parameters, Wargaming nicknames and clan tags do not change. An unsupported value stops startup with an explicit error.
 
-Après modification, recréer le conteneur avec `bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh`. Les descriptions des commandes sont synchronisées au démarrage. Lancer `/setup` dans le salon du panneau enregistré pour actualiser son texte et ses boutons. Lors du premier déploiement de la fonction de suivi du panneau, supprimer une fois l’ancien message non enregistré avant `/setup`. Tester les boutons, `/resync` et une page de retour de vérification.
+After a change, recreate the container with `bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh`. Command descriptions synchronize at startup. Run `/setup` in the saved panel channel to refresh its text and buttons. When first deploying panel tracking, delete the old untracked message once before `/setup`. Test the buttons, `/resync` and a verification callback page.
 
-### 3. Démarrer et vérifier
+### 3. Start and verify
 
 ```bash
 docker compose config --quiet
@@ -110,11 +155,11 @@ docker compose logs --tail=50 wot-verify
 curl --fail https://discord-auth.battle-conquest.eu/healthz
 ```
 
-Le contrôle HTTP doit répondre `{"ready": true}` une fois Discord connecté. `/setup` crée le message du bouton. Tester avec un membre ordinaire situé sous le bot : vérification, rôle joueur, pseudo exact, `/resync`, `/unlink`, nouvelle liaison. Redémarrer le conteneur et vérifier que le bouton initial et les liaisons fonctionnent toujours. La [recette complète est dans l'issue #1](https://github.com/Rayman223/discord-wot-verify/issues/1).
+The HTTP check should return `{"ready": true}` once Discord is connected. `/setup` creates the panel. Test with an ordinary member below the bot: verification, player role, exact nickname, `/resync`, `/unlink`, and verification again. Restart the container and confirm the original button and stored links still work. See the [full acceptance checklist in issue #1](https://github.com/Rayman223/discord-wot-verify/issues/1).
 
-#### Sans Docker Compose
+#### Without Docker Compose
 
-Après préparation du `.env`, du répertoire `data` et de SWAG, utiliser directement Docker sur Unraid :
+After preparing `.env`, `data` and SWAG, run Docker directly on Unraid:
 
 ```bash
 cd /mnt/user/appdata/discord-wot-verify
@@ -132,44 +177,46 @@ docker logs --tail=50 wot-verify
 curl --fail https://discord-auth.battle-conquest.eu/healthz
 ```
 
-Adapter `swagproxy` si le réseau partagé avec SWAG porte un autre nom. Pour les mises à jour suivantes, utiliser `bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh` : construction avant arrêt, sauvegarde SQLite et tentative de restauration si le nouveau bot ne démarre pas. Le [guide de mise à jour Unraid](docs/unraid-update.md#déclenchement-avec-unraid-user-scripts) fournit le lanceur à copier dans **User Scripts**, indépendant du répertoire courant. Ne pas supprimer le répertoire `data` : le montage conserve les liaisons lors du remplacement du conteneur. Nginx et les variables d'environnement existantes ne nécessitent aucune modification pour le bouton de retour.
+Adjust `swagproxy` to the network shared with SWAG. For later updates, use `bash /mnt/user/appdata/discord-wot-verify/scripts/update-unraid.sh`: it builds before stopping, backs up SQLite and attempts rollback if the new bot fails to start. The [Unraid update guide](docs/unraid-update.md#déclenchement-avec-unraid-user-scripts) provides a **User Scripts** launcher independent of the current directory. Never delete `data`: its mount preserves links when replacing the container. The return-to-Discord button needs no Nginx or environment changes.
 
-Les migrations SQL versionnées dans `wot_verify/migrations/` s'appliquent automatiquement au démarrage et sont suivies dans la table `migrations`. Elles sont idempotentes ; aucun accès à une base Battle-Conquest n'est nécessaire. SQLite exige un stockage local avec verrouillage fiable : éviter un montage SMB/NFS pour `data`.
+Versioned SQL migrations in `wot_verify/migrations/` run automatically at startup and are tracked in `migrations`. They are idempotent; no Battle-Conquest database access is needed. SQLite requires local storage with reliable locking: avoid SMB/NFS mounts for `data`.
 
-Pour sauvegarder de façon cohérente, arrêter le bot, copier tout le répertoire `data` puis le redémarrer. Sauvegarder aussi `.env` dans un emplacement privé. Une perte de SQLite impose une nouvelle vérification aux membres ; une sauvegarde contient des identifiants personnels et doit rester privée.
+For consistent backups, stop the bot, copy the entire `data` directory, then restart it. Also back up `.env` privately. Losing SQLite requires members to verify again; backups contain personal identifiers and must remain private.
 
-Avec **Appdata Backup**, le montage `-v` permet la détection de `data` par Unraid. Le nom du conteneur peut différer de celui du dossier. Le `.env`, situé hors du montage, doit être ajouté aux fichiers supplémentaires à sauvegarder. Voir la [configuration Appdata Backup et la correction des anciens déploiements](docs/unraid-update.md#sauvegardes-avec-appdata-backup).
+With **Appdata Backup**, the `-v` mount lets Unraid detect `data`. The container name can differ from the folder name. Because `.env` is outside the mount, add it to the additional files to back up. See the [Appdata Backup configuration and repair instructions for older deployments](docs/unraid-update.md#sauvegardes-avec-appdata-backup).
 
 ```bash
 docker compose stop wot-verify
-# Sauvegarder data et .env avec l'outil de sauvegarde Unraid.
+# Back up data and .env with your Unraid backup tool.
 docker compose start wot-verify
 ```
 
-### Limites et exploitation
+### Limitations and operation
 
-- Une seule instance du bot et un seul serveur par déploiement ; ne pas lancer plusieurs réplicas sur la même base.
-- EU est la configuration initiale. Le client API accepte aussi `com` et `asia`, mais leurs comptes réels restent à valider. La région fait partie de l'identité stockée ; ne pas changer `WG_REGION` sur une base peuplée sans supprimer les liaisons ou migrer explicitement les données. Pour un autre serveur/région, utiliser une instance et une base distinctes.
-- Le refus de renommage Discord est indépendant de la validité du pseudo WoT. Vérifier les permissions et la hiérarchie, puis `/resync`. Les erreurs transitoires n'arrêtent pas les synchronisations suivantes.
-- Le rôle joueur représente une liaison vérifiée ; retirer uniquement le rôle manuellement ne supprime pas la liaison et le rôle pourra revenir au prochain `/resync`. Utiliser `/admin_unlink` pour révoquer durablement la liaison.
-- L'application n'effectue pas de détection des bannissements WoT ; l'administrateur décide quand libérer une liaison.
-- Pour ajouter une langue, créer son catalogue dans `wot_verify/locales/` et l’ajouter à `SUPPORTED_LOCALES` dans `wot_verify/i18n.py`. Les clés absentes utilisent le texte anglais.
+- Deploy one bot instance for one server. Never run multiple replicas against the same database.
+- EU is the initial configuration. The API client also accepts `com` and `asia`, but their real accounts still need validation. Region is part of stored identity: do not change `WG_REGION` on a populated database without deleting links or explicitly migrating data. Use separate instances/databases for other servers or regions.
+- Discord's nickname refusal is independent of WoT nickname validity. Check permissions and hierarchy, then use `/resync`. Transient errors do not stop later synchronizations.
+- The player role represents a linked identity. Manually removing only that role does not delete the link, so it can return on the next `/resync`. Use `/admin_unlink` for permanent revocation.
+- The application does not detect WoT bans. An administrator decides when to release a link.
+- To add a language, create its catalogue in `wot_verify/locales/` and add it to `SUPPORTED_LOCALES` in `wot_verify/i18n.py`. Missing keys fall back to English.
 
-## Outils de modération et nouvelle tentative web
+## Moderation tools and web retry
 
-`/setup` actualise le panneau enregistré après redémarrage ou changement de langue. Depuis un autre salon, la commande indique où se trouve le panneau existant. Pour le déplacer, supprimer l’ancien message puis relancer `/setup` dans le nouveau salon. Un panneau inaccessible produit une erreur sans duplication ; accorder **Read Message History** en plus de l’accès au salon.
+`/setup` refreshes the saved panel after a restart or language change. From another channel, it reports where the existing panel is located. To move it, delete the old message and run `/setup` in the new channel. An inaccessible panel produces an error without duplication; grant **Read Message History** as well as channel access.
 
-`/contacts page:1` est réservé aux membres ayant **Manage Roles**. Il vérifie cinq contacts à la fois : présence Discord, rôles, clan et grade actuels. Une panne Wargaming est signalée comme une information inconnue. Les réservations restent en place jusqu’à une décision manuelle via `/admin_contact_remove`.
+`/contacts page:1` requires **Manage Roles**. It checks five contacts at a time for Discord presence, roles, current clan and rank. Wargaming outages are reported as unknown information. Reservations remain until a manual decision through `/admin_contact_remove`.
 
-Le journal modérateurs est facultatif : définir `LOG_CHANNEL_ID` avec l’identifiant d’un salon texte privé, puis recréer le conteneur. Le bot doit pouvoir y voir le salon et envoyer des messages. Refuser **View Channel** à `@everyone` ; les autorisations explicites de lecture sont limitées aux rôles **Administrator** / **Manage Roles**, à leurs membres ou au bot lui-même. Un salon public ou une permission trop large est refusé sans bloquer les opérations. Les événements utilisent uniquement un type fixe, une date et l’ID Discord concerné : liaison, déliaison, confirmation/retrait de contact et échecs répétés de synchronisation. Les alertes commencent au deuxième échec de synchronisation (commande, retour web ou contrôle périodique) et sont limitées à une par membre et par 24 heures ; une synchronisation réussie remet le compteur à zéro. Les membres ayant quitté le serveur ne déclenchent pas ces alertes et conservent leur liaison. Les cibles de permissions absentes du cache Discord sont vérifiées via l’API ; une erreur de vérification bloque uniquement l’envoi au journal. `LOG_CHANNEL_ID=0` désactive le journal.
+The moderator journal is optional: set `LOG_CHANNEL_ID` to a private text channel ID and recreate the container. The bot must be able to view and send in that channel. Deny **View Channel** to `@everyone`; explicit read grants must be limited to **Administrator** / **Manage Roles** roles, their members or the bot itself. A public channel or overly broad grant is rejected without blocking operations.
 
-Après une vérification partiellement réussie, la page propose **Réessayer la synchronisation**. Cette action POST ne concerne que le compte vérifié dans ce navigateur : cookie sécurisé, jeton CSRF à usage unique, origine contrôlée, expiration dix minutes après la création et trois essais maximum. Un nouvel essai après échec nécessite 30 secondes d’attente. Une déliaison invalide la session, même si le même compte est lié de nouveau. Aucun jeton n’est ajouté à une URL Discord. En fin de session, utiliser `/resync` sur Discord.
+Journal events contain only a fixed event type, timestamp and relevant Discord ID: link, unlink, contact confirmation/removal and repeated synchronization failures. Alerts start at the second synchronization failure (command, callback or periodic check) and are limited to one per member per 24 hours. A successful synchronization clears the counter. Departed members do not trigger these alerts and keep their links. Permission targets missing from Discord's cache are checked through the API; failure to verify them blocks only journal delivery. `LOG_CHANNEL_ID=0` disables the journal.
 
-Les migrations 005 à 007 s’appliquent automatiquement au démarrage et conservent les liaisons existantes. Après merge, exécuter le [script Unraid habituel](docs/unraid-update.md), puis `/setup` pour enregistrer le panneau (en supprimant auparavant l’ancien message non suivi). Aucun changement SWAG n’est nécessaire : `/resync` utilise le même proxy. Ne pas activer la journalisation des URL de connexion ni des corps de formulaire.
+After partially successful verification, the callback page offers **Retry synchronization**. This POST action concerns only the account verified in that browser: secure cookie, single-use CSRF token, validated origin, expiration ten minutes after creation and at most three attempts. After a failure, wait 30 seconds before retrying. Unlinking invalidates the session even if the same account is subsequently linked again. No token is added to a Discord URL. After the session ends, use `/resync` in Discord.
 
-## Développement et contrôles
+Migrations 005–007 run automatically at startup and preserve existing links. After deployment, run the [normal Unraid update script](docs/unraid-update.md), then `/setup` to record the panel, first deleting an old untracked panel if needed. No SWAG changes are required: `/resync` uses the same proxy. Never enable logging of login URLs or form bodies.
 
-Python 3.12 :
+## Development and checks
+
+Python 3.12:
 
 ```bash
 python -m venv .venv
@@ -180,10 +227,10 @@ python -m venv .venv
 .venv/bin/pytest -q
 ```
 
-Les tests utilisent exclusivement des bases SQLite temporaires et des doubles Discord/Wargaming. Ils ne touchent aucun serveur Discord ni base de production. Le fichier `requirements.lock` fixe les dépendances d'exécution utilisées par Docker ; les outils de développement sont déclarés séparément. Le workflow QA se lance à l'ouverture/mise à jour de PR ou manuellement ; ses résultats sont vérifiés manuellement.
+Tests use temporary SQLite databases and Discord/Wargaming doubles exclusively. They never touch a real Discord server or production database. `requirements.lock` pins Docker runtime dependencies; development tools are declared separately. QA runs when a PR is opened/updated or on manual dispatch; the user checks its results manually.
 
-Détails du protocole, des protections et de la migration : [connexion OpenID](docs/openid.md).
+Protocol, security and migration details: [OpenID login](docs/openid.md).
 
-Références : [OpenID 2.0](https://openid.net/specs/openid-authentication-2_0.html), [discord.py et permissions des commandes](https://discordpy.readthedocs.io/en/stable/interactions/api.html).
+References: [OpenID 2.0](https://openid.net/specs/openid-authentication-2_0.html), [discord.py command permissions](https://discordpy.readthedocs.io/en/stable/interactions/api.html).
 
-Licence MIT.
+MIT license.
