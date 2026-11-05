@@ -321,6 +321,18 @@ class Inspection:
         for review in self.reviews:
             if not review.valid or self.bot.config.role_id not in review.roles:
                 continue
+            needs_contact = review.contact_valid and (
+                review.member_id not in self.contacts
+                or f" [{review.clan[2]}]" not in self.bot.store.contact_tags(review.member_id)
+            )
+            if (
+                review.linked
+                and not needs_contact
+                and getattr(self.bot.config, "visitor_role_id", 0) not in review.roles
+            ):
+                # The scan already checked this player. Rechecking completed rows
+                # here can consume every retry's deadline before pending imports.
+                continue
             try:
                 fresh = await self.bot.member(review.member_id)
                 checked = await self.review(fresh, self.links.get(review.member_id))

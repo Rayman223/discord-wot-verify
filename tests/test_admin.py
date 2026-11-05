@@ -627,3 +627,46 @@ async def test_role_safety_is_rechecked_at_final_member_fetch(env, role_id):
         assert env.bot.store.get(7)["account_id"] == 100
         env.bot.sync_visitor_role.assert_awaited_once_with(member, player=True)
     assert inspection.metrics["unsafe_role"] == 1
+
+
+async def test_repeated_partial_imports_make_progress_past_completed_players(env, monkeypatch):
+    env.add(discord_id=7, name="Done", account_id=100)
+    env.bot.store.link(7, "eu", 100, "Done")
+    env.add(discord_id=8, name="Pending", account_id=101)
+    env.add(discord_id=9, name="Last", account_id=102)
+
+    async def direct(self, method, *args):
+        return await method(*args)
+
+    # The remaining operation budget allows one identity recheck per invocation.
+    # Cancelling an awaited API call mirrors asyncio.timeout's cancellation.
+    for expected_id in (8, 9):
+        monkeypatch.setattr(Inspection, "api", direct)
+        inspection = Inspection(env.bot)
+        await inspection.scan(env.guild)
+        calls = 0
+
+        async def deadline(self, method, *args):
+            nonlocal calls
+            calls += 1
+            if calls > 2:
+                raise asyncio.CancelledError
+            return await method(*args)
+
+        monkeypatch.setattr(Inspection, "api", deadline)
+        try:
+            await inspection.apply()
+        except asyncio.CancelledError:
+            pass
+        assert env.bot.store.get(expected_id) is not None
+        assert inspection.metrics["imported"] == 1
+
+
+async def test_already_linked_contact_still_imports_missing_tag_tracking(env):
+    env.add(name="Player [TAG]", roles=(2, 3))
+    env.bot.store.link(7, "eu", 100, "Player")
+    env.bot.store.reserve_contact(7, "eu", 42)
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    await inspection.apply()
+    assert env.bot.store.contact_tags(7) == [" [TAG]"]
