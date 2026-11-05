@@ -63,7 +63,7 @@ The second panel button, **Become a clan contact**, checks for commander, execut
 
 ### Statistics and importing existing players
 
-`/stats` displays local figures directly in a private Discord embed, then updates the report after inspecting Discord and Wargaming. Use the arrow buttons to browse all figures and per-member results; no file download is required. Progress is updated every ten seconds with the current phase, coverage and imported players. Local values describe the snapshot at the start of the operation, not a lifetime event history.
+`/stats` displays local figures directly in a private Discord embed, then updates the report after inspecting Discord and Wargaming. Use the arrow buttons to browse all figures and the list of players with anomalies; no file download is required. Each anomaly row shows the Discord server nickname, WoT nickname when known, both IDs and the problems found. A stored WoT nickname is labelled as stored when no current nickname was obtained. Members with only matching identities or successful import/role cleanup results are omitted from this detail list; their totals remain in the summary. Progress is updated every ten seconds with the current phase, coverage and imported players. Local values describe the snapshot at the start of the operation, not a lifetime event history.
 
 The report includes:
 

@@ -135,7 +135,6 @@
   "admin_import_note": "Administrative import based on existing roles and exact EU nicknames, not individual OpenID authentication. No nickname changes. New links await normal synchronization.",
   "admin_coverage": "Accounts checked: {done}/{total}",
   "admin_partial": "PARTIAL: some data could not be checked. Incomplete Discord lists never establish absence. No import is applied after an incomplete scan; an interrupted application may have imported some players.",
-  "admin_match": "Matching identity",
   "metric_links": "Linked players",
   "metric_contacts": "Clan contacts",
   "metric_clans": "Represented clans",
@@ -205,5 +204,10 @@
   "admin_phase_discord": "Reading Discord members",
   "admin_phase_scan": "Discord/Wargaming checks",
   "admin_phase_apply": "Applying import",
-  "admin_failed": "An error interrupted the operation. This report is partial; check the container logs before retrying."
+  "admin_failed": "An error interrupted the operation. This report is partial; check the container logs before retrying.",
+  "admin_errors_title": "Players to review — anomalies only",
+  "admin_player_error": "Discord: {discord_name} (ID {discord_id}) · {wg_label}: {wg_name} (ID {account_id}) — {reasons}",
+  "admin_wot_stored": "Stored WoT",
+  "admin_discord_absent": "member absent from the server",
+  "admin_no_errors": "No anomalies reported among the checked accounts."
 }
