@@ -48,6 +48,7 @@ LIVE_KEYS = (
     "visitor_failed",
     "changed_during_scan",
     "import_failed",
+    "unsafe_role",
 )
 
 
@@ -57,6 +58,11 @@ def display_name(member):
 
 def role_ids(member):
     return {role.id for role in member.roles}
+
+
+def nickname_parts(name):
+    suffix = re.fullmatch(r"(.+) \[([A-Za-z0-9_-]{2,5})\]", name)
+    return (suffix[1], suffix[2]) if suffix else (name, None)
 
 
 @dataclass
@@ -108,8 +114,19 @@ class Inspection:
         config = self.bot.config
         roles = role_ids(member)
         result = Review(member.id, display_name(member), roles, linked=link is not None)
-        suffix = re.fullmatch(r"(.+) \[([A-Za-z0-9_-]{2,5})\]", result.name)
-        base, tag = (suffix[1], suffix[2]) if suffix else (result.name, None)
+        base, tag = nickname_parts(result.name)
+        if config.role_id in roles:
+            try:
+                self.bot.role(member)
+            except ValueError:
+                result.reasons.append("unsafe_role")
+                return result
+        has_contact = getattr(config, "clan_role_id", 0) in roles
+        if has_contact:
+            try:
+                self.bot.contact_role(member)
+            except ValueError:
+                result.reasons.append("unsafe_role")
         try:
             if link is None:
                 match = await self.api(self.bot.wg.find_exact, base)
@@ -133,7 +150,6 @@ class Inspection:
             return result
         if tag is not None and (result.clan is None or tag != result.clan[2]):
             result.reasons.append("tag_mismatch")
-        has_contact = getattr(config, "clan_role_id", 0) in roles
         expected = result.nickname
         if has_contact and result.clan:
             expected += f" [{result.clan[2]}]"
@@ -165,6 +181,7 @@ class Inspection:
                     and tag == result.clan[2]
                     and result.clan[1] in CONTACT_RANKS
                     and "clan_changed" not in result.reasons
+                    and "unsafe_role" not in result.reasons
                 )
         return result
 
@@ -264,13 +281,19 @@ class Inspection:
     def resolve_conflicts(self):
         config = self.bot.config
         eligible = [r for r in self.reviews if r.valid and config.role_id in r.roles]
-        accounts = Counter(r.account_id for r in eligible)
+        players = [r for r in self.reviews if config.role_id in r.roles]
+        accounts = Counter(r.account_id for r in players if r.account_id is not None)
+        names = Counter(nickname_parts(r.name)[0].casefold() for r in players)
         owners = {(r["region"], r["account_id"]): i for i, r in self.links.items()}
         clan_owners = {(r["region"], r["clan_id"]): i for i, r in self.contacts.items()}
         for review in eligible:
             owner = owners.get((config.region, review.account_id))
             if (owner is not None and owner != review.member_id) or (
-                owner is None and accounts[review.account_id] > 1
+                owner is None
+                and (
+                    accounts[review.account_id] > 1
+                    or names[nickname_parts(review.name)[0].casefold()] > 1
+                )
             ):
                 review.valid = False
                 review.reasons.append("identity_conflict")
@@ -306,6 +329,11 @@ class Inspection:
                     self.metrics["import_failed"] += 1
                     review.reasons.extend(["wg_unknown", "import_failed"])
                     continue
+                if "unsafe_role" in checked.reasons and not checked.valid:
+                    self.metrics["unsafe_role"] += 1
+                    self.metrics["import_failed"] += 1
+                    review.reasons.extend(["unsafe_role", "import_failed"])
+                    continue
                 async with self.bot.lock:
                     fresh = await self.bot.member(review.member_id)
                     if (
@@ -328,8 +356,21 @@ class Inspection:
                         review.reasons.append("changed_during_scan")
                         continue
                     had_contact = self.bot.store.contact(review.member_id) is not None
+                    try:
+                        self.bot.role(fresh)
+                    except ValueError:
+                        self.metrics["unsafe_role"] += 1
+                        review.reasons.append("unsafe_role")
+                        continue
                     # A clan conflict never prevents an independently valid player link.
                     clan = checked.clan if review.contact_valid else None
+                    if clan:
+                        try:
+                            self.bot.contact_role(fresh)
+                        except ValueError:
+                            clan = None
+                            self.metrics["unsafe_role"] += 1
+                            review.reasons.append("unsafe_role")
                     if clan:
                         owner = self.bot.store.clan_contact(self.bot.config.region, clan[0])
                         existing = self.bot.store.contact(review.member_id)

@@ -199,5 +199,6 @@
   "metric_visitor_failed": "Visitor role removal failed / pending",
   "metric_changed_during_scan": "Changed during scan; skipped",
   "metric_import_failed": "Import failed / information unavailable; retry needed",
-  "admin_local_note": "Local figures: snapshot at the start of the operation; retained records, not lifetime totals. Live counters describe checked data only; unknown Wargaming results are excluded from discrepancy counts."
+  "admin_local_note": "Local figures: snapshot at the start of the operation; retained records, not lifetime totals. Live counters describe checked data only; unknown Wargaming results are excluded from discrepancy counts.",
+  "metric_unsafe_role": "Unsafe or missing configured player/contact role"
 }

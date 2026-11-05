@@ -199,5 +199,6 @@
   "metric_visitor_failed": "Retrait du rôle visiteur échoué / en attente",
   "metric_changed_during_scan": "Changement pendant le scan ; ignoré",
   "metric_import_failed": "Import échoué / informations indisponibles ; nouvelle tentative nécessaire",
-  "admin_local_note": "Chiffres locaux : instantané au début de l’opération ; enregistrements conservés, pas de totaux historiques. Les compteurs externes portent sur les données contrôlées ; les résultats Wargaming inconnus sont exclus des comptes d’anomalies."
+  "admin_local_note": "Chiffres locaux : instantané au début de l’opération ; enregistrements conservés, pas de totaux historiques. Les compteurs externes portent sur les données contrôlées ; les résultats Wargaming inconnus sont exclus des comptes d’anomalies.",
+  "metric_unsafe_role": "Rôle joueur/contact configuré non sûr ou introuvable"
 }

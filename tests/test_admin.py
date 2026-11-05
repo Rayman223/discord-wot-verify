@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from itertools import pairwise
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -38,7 +39,18 @@ def env(tmp_path, monkeypatch, request):
         for member in list(members.values()):
             yield member
 
-    guild = SimpleNamespace(id=1, fetch_members=fetch_members)
+    roles = {
+        identifier: SimpleNamespace(
+            id=identifier,
+            managed=False,
+            permissions=discord.Permissions.none(),
+            is_default=lambda identifier=identifier: identifier == 1,
+        )
+        for identifier in (1, 2, 3, 4)
+    }
+    guild = SimpleNamespace(
+        id=1, fetch_members=fetch_members, get_role=roles.get, role_objects=roles
+    )
 
     def add(discord_id=7, name="Player", roles=(2,), account_id=100, clan=(42, "commander", "TAG")):
         member = SimpleNamespace(
@@ -508,3 +520,110 @@ async def test_invalid_identity_does_not_block_valid_candidate_for_free_clan(env
     assert env.bot.store.contact(8)["clan_id"] == 42
     assert inspection.metrics["identity_conflict"] == 1
     assert inspection.metrics["contacts_imported"] == 1
+
+
+@pytest.mark.parametrize("failure", ["search", "clan"])
+async def test_ambiguous_names_remain_blocked_when_one_api_check_fails(env, failure):
+    env.add(name="Player [TAG]", roles=(2, 3))
+    env.add(discord_id=8, name="player", roles=(2,))
+    calls = {"search": 0, "clan": 0}
+
+    async def find(name):
+        calls["search"] += 1
+        if failure == "search" and calls["search"] == 1:
+            raise ValueError("wg_error")
+        return 100, "Player"
+
+    async def clan(account_id):
+        calls["clan"] += 1
+        if failure == "clan" and calls["clan"] == 1:
+            raise ValueError("wg_error")
+        return 42, "commander", "TAG"
+
+    env.bot.wg.find_exact.side_effect = find
+    env.bot.wg.clan_membership.side_effect = clan
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    await inspection.apply()
+    assert env.bot.store.get(7) is None
+    assert env.bot.store.get(8) is None
+    assert inspection.metrics["wg_unknown"] == 1
+    assert inspection.metrics["identity_conflict"] == 1
+    env.bot.sync_visitor_role.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["default", "admin", "managed", "missing"])
+async def test_import_reuses_player_role_safety_checks(env, kind):
+    if kind == "default":
+        env.bot.config = replace(env.bot.config, role_id=1)
+        env.add(roles=(1, 4))
+    else:
+        env.add(roles=(2, 4))
+        if kind == "admin":
+            env.guild.role_objects[2].permissions.administrator = True
+        elif kind == "managed":
+            env.guild.role_objects[2].managed = True
+        else:
+            del env.guild.role_objects[2]
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    await inspection.apply()
+    assert env.bot.store.get(7) is None
+    assert inspection.metrics["unsafe_role"] == 1
+    env.bot.sync_visitor_role.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["admin", "managed", "missing"])
+async def test_unsafe_contact_role_does_not_create_reservation(env, kind):
+    env.add(name="Player [TAG]", roles=(2, 3))
+    if kind == "admin":
+        env.guild.role_objects[3].permissions.administrator = True
+    elif kind == "managed":
+        env.guild.role_objects[3].managed = True
+    else:
+        del env.guild.role_objects[3]
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    await inspection.apply()
+    assert env.bot.store.get(7)["account_id"] == 100
+    assert env.bot.store.contact(7) is None
+    assert inspection.metrics["unsafe_role"] == 1
+
+
+async def test_existing_owner_keeps_priority_over_unknown_duplicate(env):
+    owner = env.add(roles=(2, 4))
+    env.bot.store.link(7, "eu", 100, "Player")
+    env.add(discord_id=8)
+    env.bot.wg.find_exact.side_effect = ValueError("wg_error")
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    await inspection.apply()
+    assert env.bot.store.get(7)["account_id"] == 100
+    assert env.bot.store.get(8) is None
+    env.bot.sync_visitor_role.assert_awaited_once_with(owner, player=True)
+
+
+@pytest.mark.parametrize("role_id", [2, 3])
+async def test_role_safety_is_rechecked_at_final_member_fetch(env, role_id):
+    member = env.add(name="Player [TAG]", roles=(2, 3, 4))
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    calls = 0
+
+    async def fetch(discord_id):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            env.guild.role_objects[role_id].permissions.administrator = True
+        return member
+
+    env.bot.member.side_effect = fetch
+    await inspection.apply()
+    assert env.bot.store.contact(7) is None
+    if role_id == 2:
+        assert env.bot.store.get(7) is None
+        env.bot.sync_visitor_role.assert_not_awaited()
+    else:
+        assert env.bot.store.get(7)["account_id"] == 100
+        env.bot.sync_visitor_role.assert_awaited_once_with(member, player=True)
+    assert inspection.metrics["unsafe_role"] == 1
