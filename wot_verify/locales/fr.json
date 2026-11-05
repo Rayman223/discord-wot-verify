@@ -128,9 +128,9 @@
   "command_stats": "Afficher les statistiques et contrôler la cohérence Discord/Wargaming",
   "command_admin_import_players": "Prévisualiser ou importer les joueurs et contacts existants dans la base",
   "admin_busy": "Un rapport/import est en cours ou a commencé il y a moins de 60 secondes. Patientez.",
-  "admin_running": "Les chiffres locaux sont joints. Contrôles Discord/Wargaming en cours (10 minutes maximum).",
+  "admin_running": "Contrôles Discord/Wargaming en cours (10 minutes maximum). Les chiffres locaux sont affichés ci-dessous.",
   "admin_preview": "Rapport / aperçu de l’import",
-  "admin_applied": "Résultat de l’import — consultez les détails joints, y compris les échecs.",
+  "admin_applied": "Résultat de l’import — vérifiez aussi les échecs et la couverture.",
   "admin_read_only": "Rapport en lecture seule. Pour importer les joueurs éligibles, lancez /admin_import_players confirm:True.",
   "admin_import_note": "Import administratif fondé sur les rôles existants et les pseudos EU exacts, sans authentification OpenID individuelle. Aucun renommage. Les nouvelles liaisons attendent la synchronisation normale.",
   "admin_coverage": "Comptes contrôlés : {done}/{total}",
@@ -200,5 +200,10 @@
   "metric_changed_during_scan": "Changement pendant le scan ; ignoré",
   "metric_import_failed": "Import échoué / informations indisponibles ; nouvelle tentative nécessaire",
   "admin_local_note": "Chiffres locaux : instantané au début de l’opération ; enregistrements conservés, pas de totaux historiques. Les compteurs externes portent sur les données contrôlées ; les résultats Wargaming inconnus sont exclus des comptes d’anomalies.",
-  "metric_unsafe_role": "Rôle joueur/contact configuré non sûr ou introuvable"
+  "metric_unsafe_role": "Rôle joueur/contact configuré non sûr ou introuvable",
+  "admin_progress": "{phase} · Membres Discord : {members} · Comptes contrôlés : {done}/{total} · Joueurs importés : {imported}",
+  "admin_phase_discord": "Lecture des membres Discord",
+  "admin_phase_scan": "Contrôles Discord/Wargaming",
+  "admin_phase_apply": "Application de l’import",
+  "admin_failed": "Une erreur a interrompu l’opération. Le rapport est partiel ; consultez les logs du conteneur avant de réessayer."
 }

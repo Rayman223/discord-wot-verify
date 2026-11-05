@@ -128,9 +128,9 @@
   "command_stats": "Show database statistics and check Discord/Wargaming consistency",
   "command_admin_import_players": "Preview or import existing player and clan contact roles into the database",
   "admin_busy": "A report/import is running or started less than 60 seconds ago. Please wait.",
-  "admin_running": "Local figures are attached. Discord/Wargaming checks are running (up to 10 minutes).",
+  "admin_running": "Discord/Wargaming checks in progress (up to 10 minutes). Local figures are displayed below.",
   "admin_preview": "Report / import preview",
-  "admin_applied": "Import result — review the attached details, including failures.",
+  "admin_applied": "Import result — also check failures and coverage.",
   "admin_read_only": "Read-only report. To import eligible existing players, run /admin_import_players confirm:True.",
   "admin_import_note": "Administrative import based on existing roles and exact EU nicknames, not individual OpenID authentication. No nickname changes. New links await normal synchronization.",
   "admin_coverage": "Accounts checked: {done}/{total}",
@@ -200,5 +200,10 @@
   "metric_changed_during_scan": "Changed during scan; skipped",
   "metric_import_failed": "Import failed / information unavailable; retry needed",
   "admin_local_note": "Local figures: snapshot at the start of the operation; retained records, not lifetime totals. Live counters describe checked data only; unknown Wargaming results are excluded from discrepancy counts.",
-  "metric_unsafe_role": "Unsafe or missing configured player/contact role"
+  "metric_unsafe_role": "Unsafe or missing configured player/contact role",
+  "admin_progress": "{phase} · Discord members: {members} · Accounts checked: {done}/{total} · Players imported: {imported}",
+  "admin_phase_discord": "Reading Discord members",
+  "admin_phase_scan": "Discord/Wargaming checks",
+  "admin_phase_apply": "Applying import",
+  "admin_failed": "An error interrupted the operation. This report is partial; check the container logs before retrying."
 }

@@ -8,7 +8,8 @@ import discord
 import pytest
 from discord import app_commands
 
-from wot_verify.admin import Inspection, report_file
+from wot_verify import admin
+from wot_verify.admin import Inspection, ReportView, report_file
 from wot_verify.bot import VerifyBot
 from wot_verify.config import Config
 from wot_verify.i18n import CATALOGS
@@ -278,7 +279,10 @@ async def test_commands_private_runtime_permissions_and_report_translation(env, 
     assert env.interaction.followup.send.call_args.kwargs["ephemeral"]
     message = env.interaction.followup.send.return_value
     final = message.edit.call_args.kwargs
-    text = final["attachments"][0].fp.getvalue().decode()
+    text = "\n".join(final["view"].pages)
+    assert "attachments" not in final
+    assert "file" not in env.interaction.followup.send.call_args.kwargs
+    assert len(final["embed"]) <= 6000
     assert "PRIVATE_" not in text
     assert "<@" not in text
     assert env.bot.t("metric_importable") in text
@@ -310,7 +314,7 @@ async def test_wrong_server_and_timeout_release_operation(env, monkeypatch):
     monkeypatch.setattr(admin, "OPERATION_TIMEOUT", 0)
     await env.bot.tree.get_command("stats").callback(env.interaction)
     final = env.interaction.followup.send.return_value.edit.call_args.kwargs
-    assert env.bot.t("admin_partial") in final["attachments"][0].fp.getvalue().decode()
+    assert env.bot.t("admin_partial") in "\n".join(final["view"].pages)
 
 
 async def test_import_rejects_foreign_region_identity(env):
@@ -425,7 +429,7 @@ async def test_timeout_during_application_preserves_completed_results(env, monke
     await env.bot.tree.get_command("admin_import_players").callback(env.interaction, confirm=True)
     assert env.bot.store.db.execute("SELECT count(*) FROM links").fetchone()[0] == 1
     final = env.interaction.followup.send.return_value.edit.call_args.kwargs
-    assert env.bot.t("admin_partial") in final["attachments"][0].fp.getvalue().decode()
+    assert env.bot.t("admin_partial") in "\n".join(final["view"].pages)
 
 
 async def test_discord_change_at_final_fetch_is_skipped(env):
@@ -670,3 +674,80 @@ async def test_already_linked_contact_still_imports_missing_tag_tracking(env):
     await inspection.scan(env.guild)
     await inspection.apply()
     assert env.bot.store.contact_tags(7) == [" [TAG]"]
+
+
+async def test_progress_is_visible_while_wg_waits(env, monkeypatch):
+    env.add()
+    entered, release, updated = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(admin, "PROGRESS_INTERVAL", 0.01)
+
+    async def find(name):
+        entered.set()
+        await release.wait()
+        return (100, name)
+
+    async def edit(**kwargs):
+        if "Comptes contrôlés" in kwargs["content"] or "Accounts checked" in kwargs["content"]:
+            updated.set()
+
+    env.bot.wg.find_exact.side_effect = find
+    env.interaction.followup.send.return_value.edit.side_effect = edit
+    task = asyncio.create_task(env.bot.tree.get_command("stats").callback(env.interaction))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        await asyncio.wait_for(updated.wait(), 1)
+    finally:
+        release.set()
+        await task
+
+
+async def test_final_edit_failure_sends_new_private_report(env, caplog):
+    env.add()
+    env.interaction.followup.send.return_value.edit.side_effect = discord.HTTPException(
+        SimpleNamespace(status=400, reason="Bad Request"), "PRIVATE_TOKEN"
+    )
+    await env.bot.tree.get_command("stats").callback(env.interaction)
+    assert env.interaction.followup.send.await_count == 2
+    final = env.interaction.followup.send.call_args.kwargs
+    assert final["ephemeral"]
+    assert env.bot.t("metric_importable") in "\n".join(final["view"].pages)
+    assert "PRIVATE_TOKEN" not in caplog.text
+    assert "Admin final delivery failed" in caplog.text
+
+
+async def test_unexpected_scan_failure_is_visible_and_logged(env, monkeypatch, caplog):
+    monkeypatch.setattr(Inspection, "scan", AsyncMock(side_effect=RuntimeError("PRIVATE_TOKEN")))
+    await env.bot.tree.get_command("stats").callback(env.interaction)
+    content = env.interaction.followup.send.return_value.edit.call_args.kwargs["content"]
+    assert env.bot.t("admin_failed") in content
+    assert env.bot.t("admin_partial") in content
+    assert "PRIVATE_TOKEN" not in caplog.text
+    assert "Admin operation failed" in caplog.text
+
+
+async def test_large_report_is_paginated_and_every_figure_is_kept(env):
+    local = {str(i): 2**63 for i in range(500)}
+    view = ReportView(env.bot, local)
+    assert len(view.pages) > 1
+    assert sum(page.count(str(2**63)) for page in view.pages) == 500
+    for index in range(len(view.pages)):
+        view.index = index
+        assert len(view.embed().description) <= 4096
+        assert len(view.embed()) <= 6000
+    interaction = SimpleNamespace(response=SimpleNamespace(edit_message=AsyncMock()))
+    view.index = 0
+    await view.next.callback(interaction)
+    assert view.index == 1
+    await view.previous.callback(interaction)
+    assert view.index == 0
+    assert view.previous.disabled
+
+
+async def test_timeout_never_reports_success_only(env, monkeypatch, caplog):
+    env.add()
+    monkeypatch.setattr(admin, "OPERATION_TIMEOUT", 0)
+    await env.bot.tree.get_command("admin_import_players").callback(env.interaction, confirm=True)
+    content = env.interaction.followup.send.return_value.edit.call_args.kwargs["content"]
+    assert env.bot.t("admin_partial") in content
+    assert env.bot.store.get(7) is None
+    assert "Admin operation timed out" in caplog.text

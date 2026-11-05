@@ -63,7 +63,7 @@ The second panel button, **Become a clan contact**, checks for commander, execut
 
 ### Statistics and importing existing players
 
-`/stats` first attaches the local figures, then updates the same private message after inspecting Discord and Wargaming. The UTF-8 text attachment contains the complete figures and per-member results without active mentions. Local values describe the snapshot at the start of the operation, not a lifetime event history.
+`/stats` displays local figures directly in a private Discord embed, then updates the report after inspecting Discord and Wargaming. Use the arrow buttons to browse all figures and per-member results; no file download is required. Progress is updated every ten seconds with the current phase, coverage and imported players. Local values describe the snapshot at the start of the operation, not a lifetime event history.
 
 The report includes:
 
@@ -79,7 +79,7 @@ There is no regional breakdown: the intended deployment is EU. Historical trends
 
 `/admin_import_players` previews existing human members with the player role. It uses their server nickname, or their Discord display name if no server nickname is set, and looks for an exact EU WoT account match (case insensitive, without approximate matching). A trailing `[TAG]` is accepted only when Wargaming confirms that clan tag. No match is reported as **desynchronized**; API errors remain **unknown**. A contact role without the player role is reported but does not grant or import a player role.
 
-Review the attachment, then run `/admin_import_players confirm:True` to repeat the checks and apply valid matches. This is an administrative import based on existing roles and names, **not individual OpenID authentication**. Only administrators should run it after reviewing the server's existing role assignments.
+Review the report pages, then run `/admin_import_players confirm:True` to repeat the checks and apply valid matches. This is an administrative import based on existing roles and names, **not individual OpenID authentication**. Only administrators should run it after reviewing the server's existing role assignments.
 
 The import:
 
@@ -89,7 +89,7 @@ The import:
 - Removes a leftover visitor role for a matching player. A failed removal is reported separately and leaves the valid link in place for a retry.
 - Does not rename members, remove player/contact roles, create a “desynchronized” role or post public verification confirmations. Imported links remain never-synchronized until normal `/resync` or the periodic check completes.
 
-Both commands share a single running-operation guard per server and a 60-second interval between starts. Wargaming requests are limited to two concurrent calls and two starts per second. An operation stops after ten minutes and explicitly reports partial coverage. Missing API information is not counted as an absent account/clan. An incomplete Discord enumeration never establishes absence and prevents application of that import scan. If application itself is interrupted, already completed imports remain; rerunning is idempotent. Counts of observed roles are partial when Discord enumeration is incomplete.
+Both commands share a single running-operation guard per server and a 60-second interval between starts. All public Wargaming API calls from this bot process share a limit of two concurrent calls and two starts per second, including verification, other commands and periodic synchronization. Rate-limit responses trigger a shared pause and at most two retries; other API errors remain unavailable information. Other processes using the same application ID do not share this in-memory limiter. An operation stops after ten minutes and explicitly reports partial coverage in the message. If the scan consumes this deadline, import application does not start. A failed final message edit triggers a new private reply with the report. Operation starts, progress, completion, timeouts and API/delivery errors are logged without credentials or external response bodies. Missing API information is not counted as an absent account/clan. An incomplete Discord enumeration never establishes absence and prevents application of that import scan. If application itself is interrupted, already completed imports remain; rerunning is idempotent. Counts of observed roles are partial when Discord enumeration is incomplete.
 
 These features use the existing schema and configuration. No new migration or environment variable is needed. After deployment, let command synchronization finish at startup, run `/stats`, inspect an import preview, then apply only the reviewed eligible players.
 
