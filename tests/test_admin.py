@@ -14,6 +14,7 @@ from wot_verify.bot import VerifyBot
 from wot_verify.config import Config
 from wot_verify.i18n import CATALOGS
 from wot_verify.statistics import local_statistics
+from wot_verify.wargaming import UNKNOWN, AccountLookup, Wargaming
 
 
 @pytest.fixture(params=["en", "fr"])
@@ -93,10 +94,29 @@ def env(tmp_path, monkeypatch, request):
         clan_membership=AsyncMock(side_effect=clan),
     )
 
-    async def direct(self, method, *args):
-        return await method(*args)
+    async def lookup(names, account_ids, *, clan_ids=()):
+        result = AccountLookup()
+        for name in dict.fromkeys(name.casefold() for name in names):
+            try:
+                result.searches[name] = await bot.wg.find_exact(name)
+            except ValueError:
+                result.searches[name] = UNKNOWN
+        ids = set(account_ids)
+        for account_id in ids:
+            try:
+                result.nicknames[account_id] = await bot.wg.nickname(account_id)
+            except ValueError:
+                pass
+        ids.update(clan_ids)
+        ids.update(match[0] for match in result.searches.values() if isinstance(match, tuple))
+        for account_id in ids:
+            try:
+                result.clans[account_id] = await bot.wg.clan_membership(account_id)
+            except ValueError:
+                pass
+        return result
 
-    monkeypatch.setattr(Inspection, "api", direct)
+    bot.wg.lookup = AsyncMock(side_effect=lookup)
     interaction = SimpleNamespace(
         guild_id=1,
         guild=guild,
@@ -476,12 +496,12 @@ async def test_api_starts_are_spaced_and_concurrency_bounded(tmp_path):
         )
     )
     try:
-        inspection = Inspection(bot)
+        wg = Wargaming(None, "app", "eu")
         starts = []
         active = 0
         maximum = 0
 
-        async def request():
+        async def request(*args, **kwargs):
             nonlocal active, maximum
             starts.append(asyncio.get_running_loop().time())
             active += 1
@@ -489,7 +509,8 @@ async def test_api_starts_are_spaced_and_concurrency_bounded(tmp_path):
             await asyncio.sleep(0.7)
             active -= 1
 
-        await asyncio.gather(*(inspection.api(request) for _ in range(3)))
+        wg._request_once = request
+        await asyncio.gather(*(wg.request("account/info") for _ in range(3)))
         assert maximum <= 2
         assert all(right - left >= 0.48 for left, right in pairwise(starts))
     finally:
@@ -527,7 +548,9 @@ async def test_invalid_identity_does_not_block_valid_candidate_for_free_clan(env
 
 
 @pytest.mark.parametrize("failure", ["search", "clan"])
-async def test_ambiguous_names_remain_blocked_when_one_api_check_fails(env, failure):
+async def test_ambiguous_names_remain_blocked_when_one_api_check_fails(env, failure, monkeypatch):
+    # Split duplicates across API batches: an unknown twin must still block import.
+    monkeypatch.setattr(admin, "BATCH_SIZE", 1)
     env.add(name="Player [TAG]", roles=(2, 3))
     env.add(discord_id=8, name="player", roles=(2,))
     calls = {"search": 0, "clan": 0}
@@ -639,25 +662,21 @@ async def test_repeated_partial_imports_make_progress_past_completed_players(env
     env.add(discord_id=8, name="Pending", account_id=101)
     env.add(discord_id=9, name="Last", account_id=102)
 
-    async def direct(self, method, *args):
-        return await method(*args)
-
-    # The remaining operation budget allows one identity recheck per invocation.
-    # Cancelling an awaited API call mirrors asyncio.timeout's cancellation.
+    original = Inspection.apply_review
+    # The remaining budget permits applying one reviewed identity per invocation.
     for expected_id in (8, 9):
-        monkeypatch.setattr(Inspection, "api", direct)
         inspection = Inspection(env.bot)
         await inspection.scan(env.guild)
         calls = 0
 
-        async def deadline(self, method, *args):
+        async def deadline(self, review, fresh, wg):
             nonlocal calls
             calls += 1
-            if calls > 2:
+            if calls > 1:
                 raise asyncio.CancelledError
-            return await method(*args)
+            return await original(self, review, fresh, wg)
 
-        monkeypatch.setattr(Inspection, "api", deadline)
+        monkeypatch.setattr(Inspection, "apply_review", deadline)
         try:
             await inspection.apply()
         except asyncio.CancelledError:
@@ -751,3 +770,46 @@ async def test_timeout_never_reports_success_only(env, monkeypatch, caplog):
     assert env.bot.t("admin_partial") in content
     assert env.bot.store.get(7) is None
     assert "Admin operation timed out" in caplog.text
+
+
+async def test_4141_members_and_638_players_need_only_14_wg_requests_per_phase(env):
+    # Real WG batching, parsing and rate limiter; fake transport and Discord only.
+    for i in range(4141):
+        env.members[i + 100] = SimpleNamespace(
+            id=i + 100,
+            nick=f"Player_{i}",
+            display_name=f"Player_{i}",
+            bot=False,
+            guild=env.guild,
+            roles=[SimpleNamespace(id=2 if i < 638 else 1)],
+        )
+    wg = Wargaming(None, "app", "eu")
+
+    async def request(endpoint, **params):
+        if endpoint == "account/list":
+            return [
+                {
+                    "account_id": int(name.split("_")[1]) + 10000,
+                    "nickname": f"Player_{int(name.split('_')[1])}",
+                }
+                for name in params["search"].split(",")
+            ]
+        assert endpoint == "clans/accountinfo"
+        return {account_id: None for account_id in params["account_id"].split(",")}
+
+    wg._request_once = AsyncMock(side_effect=request)
+    env.bot.wg = wg
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    assert inspection.complete
+    assert inspection.processed == inspection.total == 638
+    assert inspection.metrics["members_checked"] == 4141
+    assert inspection.metrics["importable"] == 638
+    assert wg._request_once.await_count == 14
+    assert env.bot.store.get(100) is None
+    await inspection.apply()
+    assert inspection.metrics["imported"] == 638
+    assert wg._request_once.await_count == 28
+    assert env.bot.store.get(100)["account_id"] == 10000
+    assert env.bot.store.get(737)["account_id"] == 10637
+    assert env.bot.store.get(738) is None
