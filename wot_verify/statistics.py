@@ -1,9 +1,20 @@
-"""Read-only statistics derived from SQLite."""
+"""Read-only statistics derived from a consistent SQLite snapshot."""
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _snapshot(db):
+    db.execute("SAVEPOINT statistics_snapshot")
+    try:
+        yield
+    finally:
+        db.execute("RELEASE SAVEPOINT statistics_snapshot")
 
 
 def local_statistics(store, now):
     db = store.db
-    with db:
+    with _snapshot(db):
 
         def scalar(sql, params=()):
             return db.execute(sql, params).fetchone()[0]
