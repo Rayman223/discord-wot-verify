@@ -8,6 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
+from .admin import register_admin_commands
 from .audit import AuditJournal
 from .contacts import register_contacts_command
 from .i18n import t
@@ -92,6 +93,7 @@ class VerifyBot(discord.Client):
         self.runner = None
         self.register_commands()
         register_contacts_command(self)
+        register_admin_commands(self)
 
     def t(self, key):
         return t(key, getattr(self.config, "locale", "en"))

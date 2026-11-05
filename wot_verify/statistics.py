@@ -23,6 +23,10 @@ def local_statistics(store, now):
         queries = {
             "links": ("SELECT count(*) FROM links", ()),
             "contacts": ("SELECT count(*) FROM clan_contacts", ()),
+            "clans": (
+                "SELECT count(*) FROM (SELECT DISTINCT region, clan_id FROM clan_contacts)",
+                (),
+            ),
             "never_synced": ("SELECT count(*) FROM links WHERE synced_at=0", ()),
             "due": ("SELECT count(*) FROM links WHERE synced_at<=?", (now - 30 * 86400,)),
             "recent": ("SELECT count(*) FROM links WHERE synced_at>?", (now - 30 * 86400,)),
@@ -81,6 +85,7 @@ def local_statistics(store, now):
         }
         for key, (sql, params) in queries.items():
             stats[key] = scalar(sql, params)
+        stats["players_without_contact"] = stats["links"] - stats["linked_contacts"]
         for table in ("verification_notices", "clan_contact_notices"):
             for delivered in (0, 1):
                 stats[f"{table}_{delivered}"] = scalar(

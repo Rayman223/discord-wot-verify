@@ -66,3 +66,48 @@ async def test_malformed_clan_response_fails_closed(data):
     wg.request = AsyncMock(return_value=data)
     with pytest.raises(ValueError, match="wg_error"):
         await wg.clan_membership(10)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [None],
+        [{"account_id": 0, "nickname": "Player"}],
+        [{"account_id": 42, "nickname": "Player"}, {"account_id": 43, "nickname": "Player"}],
+    ],
+)
+async def test_exact_search_does_not_accept_malformed_or_ambiguous_results(data):
+    wg = Wargaming(None, "app", "eu")
+    wg.request = AsyncMock(return_value=data)
+    with pytest.raises(ValueError, match="wg_error"):
+        await wg.find_exact("Player")
+
+
+@pytest.mark.parametrize(
+    "data,expected_type,ok",
+    [([], list, True), ({}, dict, True), ({}, list, False), ([], dict, False), (None, list, False)],
+)
+async def test_request_validates_endpoint_response_shape(data, expected_type, ok):
+    class Response:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        async def json(self):
+            return {"status": "ok", "data": data}
+
+    class Session:
+        def post(self, *args, **kwargs):
+            return Response()
+
+    wg = Wargaming(Session(), "app", "eu")
+    if ok:
+        assert await wg.request("account/list", data_type=expected_type) == data
+    else:
+        with pytest.raises(ValueError, match="wg_error"):
+            await wg.request("account/list", data_type=expected_type)
