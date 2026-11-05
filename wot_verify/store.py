@@ -83,6 +83,34 @@ class Store:
                 (nickname, int(time.time()), discord_id),
             )
 
+    def import_player(self, discord_id, region, account_id, nickname, *, clan_id=None, tag=None):
+        """Import an administrator-reviewed identity without replacing existing links."""
+        try:
+            with self.db:
+                current = self.get(discord_id)
+                if current is None:
+                    self.db.execute(
+                        "INSERT INTO links VALUES (?, ?, ?, ?, 0)",
+                        (discord_id, region, account_id, nickname),
+                    )
+                elif (current["region"], current["account_id"]) != (region, account_id):
+                    raise ValueError("already_linked")
+                if clan_id is not None:
+                    contact = self.contact(discord_id)
+                    if contact is None:
+                        self.db.execute(
+                            "INSERT INTO clan_contacts VALUES (?, ?, ?)",
+                            (discord_id, region, clan_id),
+                        )
+                    elif (contact["region"], contact["clan_id"]) != (region, clan_id):
+                        raise ValueError("clan_taken")
+                    self.db.execute(
+                        "INSERT OR IGNORE INTO clan_tag_state VALUES (?, ?)",
+                        (discord_id, f" [{tag}]"),
+                    )
+        except sqlite3.IntegrityError:
+            raise ValueError("already_linked") from None
+
     def unlink(self, discord_id):
         with self.db:
             self.db.execute("DELETE FROM clan_contacts WHERE discord_id=?", (discord_id,))
