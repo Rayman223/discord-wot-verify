@@ -139,6 +139,16 @@ async def test_status_missing_role_and_blocked_nickname(env):
     assert bot.t("status_nickname_blocked") in report.description
 
 
+async def test_status_keeps_candles_visible_without_reporting_nickname_error(env):
+    bot, member, _, _ = env
+    bot.store.link(7, "eu", 100, "Player")
+    member.nick = "Player 🕯️🕯"
+    member.top_role = member.guild.me.top_role
+    report = await status_report(bot, 7)
+    assert report.description == bot.t("status_ok")
+    assert "🕯" in values(report)
+
+
 @pytest.mark.parametrize("kind", ["none", "failure", "wrong_region"])
 async def test_status_no_clan_is_distinct_from_unavailable(env, kind):
     bot, _, _, _ = env

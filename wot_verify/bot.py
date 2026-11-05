@@ -12,6 +12,7 @@ from .admin import register_admin_commands
 from .audit import AuditJournal
 from .contacts import register_contacts_command
 from .i18n import t
+from .nicknames import without_birthday_candles, without_managed_tag
 from .notices import VerificationNotices
 from .openid import OpenID
 from .reports import diagnose_report, status_report
@@ -188,7 +189,7 @@ class VerifyBot(discord.Client):
         await member.add_roles(self.role(member), reason="Wargaming account verification")
         await self.sync_visitor_role(member, player=True)
         try:
-            if member.nick != nickname:
+            if without_birthday_candles(member.nick) != nickname:
                 await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
         except discord.Forbidden:
             await self.notices.send(row, nickname_pending=True)
@@ -284,7 +285,7 @@ class VerifyBot(discord.Client):
         if current is None:
             await self.audit.emit("contact_added", discord_id)
         try:
-            if member.nick != nickname:
+            if without_birthday_candles(member.nick) != nickname:
                 await member.edit(nick=nickname, reason="Clan contact nickname")
         except DISCORD_IO_ERRORS:
             await self.notices.send(row, contact=True, nickname_pending=True)
@@ -315,7 +316,9 @@ class VerifyBot(discord.Client):
                 and not self.store.contact_tags(discord_id)
                 and member.nick
             ):
-                suffix = re.search(r" \[[A-Za-z0-9_-]{2,5}\]$", member.nick)
+                suffix = re.search(
+                    r" \[[A-Za-z0-9_-]{2,5}\]$", without_birthday_candles(member.nick)
+                )
                 if suffix:
                     self.store.remember_tag(discord_id, suffix[0])
             if has_role:
@@ -325,10 +328,11 @@ class VerifyBot(discord.Client):
             await self.audit.emit("contact_removed", discord_id)
         if member and member.nick:
             for suffix in self.store.contact_tags(discord_id):
-                if member.nick.endswith(suffix):
+                nickname = without_managed_tag(member.nick, suffix)
+                if nickname is not None:
                     try:
                         await member.edit(
-                            nick=member.nick[: -len(suffix)] or None,
+                            nick=nickname or None,
                             reason="Clan contact tag removed",
                         )
                     except DISCORD_IO_ERRORS:

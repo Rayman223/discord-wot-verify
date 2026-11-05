@@ -112,6 +112,17 @@ async def test_matching_nickname_needs_no_edit(bot):
     assert bot.store.get(1)["synced_at"] > 0
 
 
+async def test_matching_birthday_nickname_keeps_candles(bot):
+    bot.store.link(1, "eu", 10, "Player")
+    member = SimpleNamespace(id=1, nick="Player 🕯️🕯", add_roles=AsyncMock(), edit=AsyncMock())
+    bot.member = AsyncMock(return_value=member)
+    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.role = lambda _: "role"
+    await bot.sync(bot.store.get(1))
+    member.edit.assert_not_awaited()
+    assert bot.store.get(1)["nickname"] == "Player"
+
+
 async def test_failed_syncs_alert_once_and_success_resets_counter(bot):
     bot.store.link(1, "eu", 10, "Player")
     row = bot.store.get(1)

@@ -14,6 +14,7 @@ import aiohttp
 import discord
 from discord import app_commands
 
+from .nicknames import without_birthday_candles
 from .reports import text as safe_text
 from .statistics import _snapshot, local_statistics
 from .wargaming import BATCH_SIZE, CONTACT_RANKS
@@ -83,6 +84,7 @@ def role_ids(member):
 
 
 def nickname_parts(name):
+    name = without_birthday_candles(name)
     suffix = re.fullmatch(r"(.+) \[([A-Za-z0-9_-]{2,5})\]", name)
     return (suffix[1], suffix[2]) if suffix else (name, None)
 
@@ -181,7 +183,7 @@ class Inspection:
         expected = result.nickname
         if has_contact and result.clan:
             expected += f" [{result.clan[2]}]"
-        if result.name != expected:
+        if without_birthday_candles(result.name) != expected:
             result.reasons.append("nickname_mismatch")
         # Search is case insensitive, but no fuzzy or partial nickname is accepted.
         result.valid = (
@@ -395,7 +397,8 @@ class Inspection:
                 fresh = await self.bot.member(review.member_id)
                 if (
                     role_ids(fresh) != review.roles
-                    or display_name(fresh) != review.name
+                    or without_birthday_candles(display_name(fresh))
+                    != without_birthday_candles(review.name)
                     or not checked.valid
                     or checked.account_id != review.account_id
                     or (

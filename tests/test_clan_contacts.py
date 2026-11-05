@@ -65,6 +65,17 @@ async def test_contact_role_and_tag_for_allowed_grades(bot, rank):
     assert LoginView(client).is_persistent()
 
 
+async def test_contact_claim_preserves_birthday_candles_and_tag_cleanup_removes_only_tag(bot):
+    client, member = bot
+    member.nick = "Player [TAG] 🕯️🕯"
+    async with client.lock:
+        await client.claim_contact(10)
+    member.edit.assert_not_awaited()
+    assert client.store.contact_tags(10) == [" [TAG]"]
+    assert await client.remove_contact(10)
+    assert member.edit.await_args.kwargs["nick"] == "Player 🕯️🕯"
+
+
 @pytest.mark.parametrize(
     "membership", [None, (42, "private", "TAG"), (42, "personnel_officer", "TAG")]
 )
