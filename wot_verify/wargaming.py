@@ -1,24 +1,67 @@
+import asyncio
+import logging
 import re
+import time
 
 import aiohttp
 
 CONTACT_RANKS = frozenset({"commander", "executive_officer", "recruitment_officer"})
+log = logging.getLogger(__name__)
+
+
+class RateLimited(Exception):
+    pass
 
 
 class Wargaming:
     def __init__(self, session, app_id, region):
         self.session, self.app_id, self.region = session, app_id, region
         self.base = f"https://api.worldoftanks.{region}/wot"
+        # Shared by verification, commands, imports and periodic synchronization.
+        self._rate_lock = asyncio.Lock()
+        self._slots = asyncio.Semaphore(2)
+        self._next_call = 0.0
 
     async def request(self, endpoint, *, data_type=dict, **params):
+        for attempt in range(3):
+            async with self._slots:
+                async with self._rate_lock:
+                    await asyncio.sleep(max(0, self._next_call - time.monotonic()))
+                    self._next_call = time.monotonic() + 0.5
+                try:
+                    return await self._request_once(endpoint, data_type=data_type, **params)
+                except RateLimited:
+                    # Pause all callers, rather than retrying in a tight loop.
+                    async with self._rate_lock:
+                        self._next_call = max(self._next_call, time.monotonic() + 2**attempt)
+                    log.warning("WG request throttled: attempt=%s", attempt + 1)
+        raise ValueError("wg_error")
+
+    async def _request_once(self, endpoint, *, data_type=dict, **params):
         try:
             async with self.session.post(
                 f"{self.base}/{endpoint}/",
                 data={"application_id": self.app_id, **params},
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as response:
+                if getattr(response, "status", None) == 429:
+                    raise RateLimited
                 response.raise_for_status()
                 payload = await response.json()
+            if isinstance(payload, dict) and payload.get("status") == "error":
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    if error.get("message") in {
+                        "REQUEST_LIMIT_EXCEEDED",
+                        "REQUEST_LIMIT_EXCEEDED_PER_IP",
+                        "REQUEST_LIMIT_EXCEEDED_PER_APPLICATION",
+                    }:
+                        raise RateLimited
+                    # Only numeric codes are safe; never log URLs or API values.
+                    code = error.get("code")
+                    log.warning(
+                        "WG API rejected request: code=%s", code if type(code) is int else "unknown"
+                    )
             if (
                 not isinstance(payload, dict)
                 or payload.get("status") != "ok"
@@ -26,8 +69,9 @@ class Wargaming:
             ):
                 raise ValueError
             return payload["data"]
-        except (aiohttp.ClientError, TimeoutError, ValueError, TypeError):
+        except (aiohttp.ClientError, TimeoutError, ValueError, TypeError) as exc:
             # Never include the URL, response body or access token in exceptions/logs.
+            log.warning("WG request failed: %s", type(exc).__name__)
             raise ValueError("wg_error") from None
 
     async def find_exact(self, nickname):

@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import logging
 import re
 import time
 from collections import Counter
@@ -16,6 +17,9 @@ from .statistics import _snapshot, local_statistics
 from .wargaming import CONTACT_RANKS
 
 IO_ERRORS = (discord.HTTPException, aiohttp.ClientError, OSError, ValueError, TimeoutError)
+log = logging.getLogger(__name__)
+PROGRESS_INTERVAL = 10
+DISCORD_TIMEOUT = 15
 OPERATION_TIMEOUT = 600
 OPERATION_COOLDOWN = 60
 LIVE_KEYS = (
@@ -90,6 +94,7 @@ class Inspection:
         self.total = 0
         self.processed = 0
         self.partial = False
+        self.enumerating = True
         self._rate_lock = asyncio.Lock()
         self._slots = asyncio.Semaphore(2)
         self._next_call = 0.0
@@ -215,6 +220,7 @@ class Inspection:
             self.partial = True
         else:
             self.discord_complete = True
+        self.enumerating = False
         self.metrics["members_checked"] = len(self.members)
         config = self.bot.config
         clan_role = getattr(config, "clan_role_id", 0)
@@ -274,7 +280,13 @@ class Inspection:
                     if reason != "linked_absent":
                         self.metrics[reason] += 1
 
-        await asyncio.gather(worker(), worker())
+        workers = [asyncio.create_task(worker()) for _ in range(2)]
+        try:
+            await asyncio.gather(*workers)
+        finally:
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
         self.resolve_conflicts()
         self.complete = self.discord_complete
 
@@ -422,7 +434,7 @@ class Inspection:
                 review.reasons.append("import_failed")
 
 
-def report_file(bot, local, inspection=None, *, applying=False):
+def report_lines(bot, local, inspection=None, *, applying=False):
     lines = [bot.t("admin_applied" if applying else "admin_preview"), bot.t("admin_local_note")]
     for key, value in local.items():
         if key in {"oldest", "newest"} and value is not None:
@@ -452,7 +464,48 @@ def report_file(bot, local, inspection=None, *, applying=False):
                 f"Discord {review.member_id} · WoT {review.account_id or '—'}: "
                 + "; ".join(reasons)
             )
+    return lines
+
+
+def report_file(bot, local, inspection=None, *, applying=False):
+    lines = report_lines(bot, local, inspection, applying=applying)
     return discord.File(io.BytesIO(("\n".join(lines) + "\n").encode()), filename="wot-report.txt")
+
+
+class ReportView(discord.ui.View):
+    """Keep every figure readable without exceeding Discord's embed limits."""
+
+    def __init__(self, bot, local, inspection=None, *, applying=False):
+        super().__init__(timeout=600)
+        self.pages = [""]
+        for line in report_lines(bot, local, inspection, applying=applying):
+            if len(self.pages[-1]) + len(line) + 1 > 3500:
+                self.pages.append("")
+            self.pages[-1] += line + "\n"
+        self.index = 0
+        self.title = bot.t("admin_applied" if applying else "admin_preview")
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.previous.disabled = self.index == 0
+        self.next.disabled = self.index == len(self.pages) - 1
+
+    def embed(self):
+        embed = discord.Embed(title=self.title, description=self.pages[self.index])
+        embed.set_footer(text=f"{self.index + 1}/{len(self.pages)}")
+        return embed
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction, button):
+        self.index = max(0, self.index - 1)
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.embed(), view=self)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction, button):
+        self.index = min(len(self.pages) - 1, self.index + 1)
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.embed(), view=self)
 
 
 def register_admin_commands(bot):
@@ -469,27 +522,103 @@ def register_admin_commands(bot):
             raise ValueError("wrong_server")
         running, last_started = True, time.monotonic()
         try:
+            log.info("Admin operation started: import=%s apply=%s", importing, confirm)
             local = local_statistics(bot.store, int(time.time()))
             inspection = Inspection(bot)
-            message = await interaction.followup.send(
-                bot.t("admin_running"),
-                file=report_file(bot, local),
-                ephemeral=True,
-                wait=True,
-            )
+            view = ReportView(bot, local)
+            async with asyncio.timeout(DISCORD_TIMEOUT):
+                message = await interaction.followup.send(
+                    bot.t("admin_running"),
+                    embed=view.embed(),
+                    view=view,
+                    ephemeral=True,
+                    wait=True,
+                )
+            phase = "admin_phase_discord"
+
+            async def progress():
+                while True:
+                    await asyncio.sleep(PROGRESS_INTERVAL)
+                    text = bot.t("admin_progress").format(
+                        phase=bot.t("admin_phase_discord" if inspection.enumerating else phase),
+                        members=len(inspection.members),
+                        done=inspection.processed,
+                        total=inspection.total,
+                        imported=inspection.metrics["imported"],
+                    )
+                    log.info(
+                        "Admin progress: phase=%s members=%s checked=%s/%s imported=%s",
+                        phase,
+                        len(inspection.members),
+                        inspection.processed,
+                        inspection.total,
+                        inspection.metrics["imported"],
+                    )
+                    try:
+                        async with asyncio.timeout(DISCORD_TIMEOUT):
+                            await message.edit(content=text)
+                    except IO_ERRORS as exc:
+                        log.warning("Admin progress delivery failed: %s", type(exc).__name__)
+
+            heartbeat = asyncio.create_task(progress())
+            failure = ""
             try:
                 async with asyncio.timeout(OPERATION_TIMEOUT):
+                    phase = "admin_phase_scan"
                     await inspection.scan(interaction.guild)
                     if importing and confirm:
+                        phase = "admin_phase_apply"
                         await inspection.apply()
             except TimeoutError:
                 inspection.partial = True
-            await message.edit(
-                content=bot.t("admin_applied" if importing and confirm else "admin_preview")
-                + "\n"
-                + bot.t("admin_read_only" if not (importing and confirm) else "admin_import_note"),
-                attachments=[report_file(bot, local, inspection, applying=importing and confirm)],
-                allowed_mentions=discord.AllowedMentions.none(),
+                log.warning(
+                    "Admin operation timed out: checked=%s/%s imported=%s",
+                    inspection.processed,
+                    inspection.total,
+                    inspection.metrics["imported"],
+                )
+            except Exception as exc:  # noqa: BLE001 - report failure without leaking exception text
+                # Do not log exception text: external errors may contain credentials.
+                inspection.partial = True
+                log.error("Admin operation failed: phase=%s type=%s", phase, type(exc).__name__)
+                failure = bot.t("admin_failed")
+            finally:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
+            view.stop()
+            applying = importing and confirm
+            view = ReportView(bot, local, inspection, applying=applying)
+            content = bot.t("admin_applied" if applying else "admin_preview") + "\n"
+            content += bot.t("admin_import_note" if applying else "admin_read_only")
+            if inspection.partial or not inspection.complete:
+                content += "\n" + bot.t("admin_partial")
+            if failure:
+                content += "\n" + failure
+            try:
+                async with asyncio.timeout(DISCORD_TIMEOUT):
+                    await message.edit(
+                        content=content,
+                        embed=view.embed(),
+                        view=view,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            except IO_ERRORS as exc:
+                log.warning("Admin final delivery failed: %s", type(exc).__name__)
+                # A failed edit must not silently discard the completed report.
+                async with asyncio.timeout(DISCORD_TIMEOUT):
+                    await interaction.followup.send(
+                        content,
+                        embed=view.embed(),
+                        view=view,
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            log.info(
+                "Admin operation finished: partial=%s checked=%s/%s imported=%s",
+                inspection.partial,
+                inspection.processed,
+                inspection.total,
+                inspection.metrics["imported"],
             )
         finally:
             running = False
