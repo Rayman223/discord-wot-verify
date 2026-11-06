@@ -35,7 +35,8 @@ async def test_missing_account_or_invalid_nickname(account):
 
 
 @pytest.mark.parametrize(
-    "rank", ["commander", "executive_officer", "recruitment_officer", "private"]
+    "rank",
+    ["commander", "executive_officer", "personnel_officer", "recruitment_officer", "private"],
 )
 async def test_clan_membership(rank):
     wg = Wargaming(None, "app", "eu")

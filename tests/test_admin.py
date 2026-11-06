@@ -161,6 +161,17 @@ async def test_preview_is_read_only_and_apply_imports_player_contact_visitor(env
     assert again.metrics["contacts_imported"] == 0
 
 
+async def test_personnel_officer_contact_is_importable_and_keeps_valid_rank(env):
+    env.add(name="Player [TAG]", roles=(2, 3), clan=(42, "personnel_officer", "TAG"))
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    assert inspection.metrics["rank_lost"] == 0
+    assert inspection.metrics["contacts_importable"] == 1
+    await inspection.apply()
+    assert inspection.metrics["contacts_imported"] == 1
+    assert env.bot.store.contact(7)["clan_id"] == 42
+
+
 @pytest.mark.parametrize("kind", ["missing", "wrong_tag", "api_failure"])
 async def test_desynchronized_and_unknown_identities_are_not_imported(env, kind):
     env.add(name="Player [TAG]", roles=(2, 3, 4))

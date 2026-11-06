@@ -33,12 +33,16 @@ def bot(tmp_path, request):
     bot.store.close()
 
 
-@pytest.mark.parametrize("state", ["ok", "left", "clan", "rank", "wg", "discord", "roles"])
+@pytest.mark.parametrize(
+    "state", ["ok", "personnel", "left", "clan", "rank", "wg", "discord", "roles"]
+)
 async def test_reviews_are_read_only_and_distinguish_unknown(bot, state):
     bot.store.link(7, "eu", 100, "Player")
     bot.store.reserve_contact(7, "eu", 42)
     key = "contacts_ok"
-    if state == "left":
+    if state == "personnel":
+        bot.wg.clan_membership.return_value = (42, "personnel_officer", "TAG")
+    elif state == "left":
         bot.member.side_effect = discord.NotFound(SimpleNamespace(status=404, reason=""), "")
         key = "contacts_left"
     elif state == "clan":

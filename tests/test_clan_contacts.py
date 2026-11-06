@@ -53,7 +53,9 @@ def bot(tmp_path):
     client.store.close()
 
 
-@pytest.mark.parametrize("rank", ["commander", "executive_officer", "recruitment_officer"])
+@pytest.mark.parametrize(
+    "rank", ["commander", "executive_officer", "personnel_officer", "recruitment_officer"]
+)
 async def test_contact_role_and_tag_for_allowed_grades(bot, rank):
     client, member = bot
     client.wg.clan_membership.return_value = (42, rank, "TAG")
@@ -76,8 +78,20 @@ async def test_contact_claim_preserves_birthday_candles_and_tag_cleanup_removes_
     assert member.edit.await_args.kwargs["nick"] == "Player 🕯️🕯"
 
 
+async def test_personnel_officer_contact_can_resync(bot):
+    client, member = bot
+    client.wg.clan_membership.return_value = (42, "personnel_officer", "TAG")
+    await client.claim_contact(10)
+    member.nick = "Old"
+    member.edit.reset_mock()
+    client.role = lambda _: "player-role"
+    await client.sync(client.store.get(10))
+    assert member.edit.await_args.kwargs["nick"] == "Player [TAG]"
+    assert client.store.contact(10)["clan_id"] == 42
+
+
 @pytest.mark.parametrize(
-    "membership", [None, (42, "private", "TAG"), (42, "personnel_officer", "TAG")]
+    "membership", [None, (42, "private", "TAG"), (42, "combat_officer", "TAG")]
 )
 async def test_ineligible_does_not_receive_role(bot, membership):
     client, member = bot
