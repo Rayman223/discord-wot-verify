@@ -16,6 +16,7 @@ def bot(tmp_path):
             state_secret="x" * 32,
             guild_id=123,
             role_id=456,
+            region="eu",
         )
     )
     yield instance
@@ -91,7 +92,9 @@ async def test_rename_refusal_distinguished_from_role_failure(bot):
         id=1, nick="OldName", add_roles=AsyncMock(), edit=AsyncMock(side_effect=forbidden)
     )
     bot.member = AsyncMock(return_value=member)
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     bot.role = lambda _: "role"
     with pytest.raises(ValueError, match="nickname_blocked"):
         await bot.sync(bot.store.get(1))
@@ -105,7 +108,9 @@ async def test_matching_nickname_needs_no_edit(bot):
     bot.store.link(1, "eu", 10, "Player")
     member = SimpleNamespace(id=1, nick="Player", add_roles=AsyncMock(), edit=AsyncMock())
     bot.member = AsyncMock(return_value=member)
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     bot.role = lambda _: "role"
     await bot.sync(bot.store.get(1))
     member.edit.assert_not_awaited()
@@ -116,7 +121,9 @@ async def test_matching_birthday_nickname_keeps_candles(bot):
     bot.store.link(1, "eu", 10, "Player")
     member = SimpleNamespace(id=1, nick="Player 🕯️🕯", add_roles=AsyncMock(), edit=AsyncMock())
     bot.member = AsyncMock(return_value=member)
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     bot.role = lambda _: "role"
     await bot.sync(bot.store.get(1))
     member.edit.assert_not_awaited()
@@ -135,7 +142,9 @@ async def test_failed_syncs_alert_once_and_success_resets_counter(bot):
     bot.audit.emit.assert_awaited_once_with("sync_failed", 1)
     bot.member.side_effect = None
     bot.member.return_value = SimpleNamespace(id=1, nick="Player", add_roles=AsyncMock())
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     bot.role = lambda _: "role"
     await bot.sync(row)
     bot.member.side_effect = error
@@ -168,7 +177,9 @@ async def test_not_found_during_role_update_still_alerts(bot):
             ),
         )
     )
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     bot.role = lambda _: "role"
     bot.audit.emit = AsyncMock()
     for _ in range(2):

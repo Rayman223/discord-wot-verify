@@ -10,6 +10,7 @@ from discord.ext import tasks
 
 from .admin import register_admin_commands
 from .audit import AuditJournal
+from .birthdays import Birthdays
 from .contacts import register_contacts_command
 from .i18n import t
 from .nicknames import without_birthday_candles, without_managed_tag
@@ -99,6 +100,7 @@ class VerifyBot(discord.Client):
         self.store = Store(config.database)
         self.audit = AuditJournal(self)
         self.notices = VerificationNotices(self)
+        self.birthdays = Birthdays(self)
         self.states = States(config.state_secret, config.guild_id, self.store)
         self.lock = asyncio.Lock()
         self.tree = app_commands.CommandTree(self)
@@ -126,15 +128,19 @@ class VerifyBot(discord.Client):
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
         self.monthly_sync.start()
+        self.birthday_dates.start()
+        self.birthday_jobs.start()
 
     async def close(self):
-        self.monthly_sync.cancel()
-        task = self.monthly_sync.get_task()
-        if task:
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        for loop in (self.monthly_sync, self.birthday_dates, self.birthday_jobs):
+            loop.cancel()
+        for loop in (self.monthly_sync, self.birthday_dates, self.birthday_jobs):
+            task = loop.get_task()
+            if task:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         if self.runner:
             await self.runner.cleanup()
         if hasattr(self, "session"):
@@ -199,9 +205,14 @@ class VerifyBot(discord.Client):
             self.store.remember_tag(member.id, suffix)
         await member.add_roles(self.role(member), reason="Wargaming account verification")
         await self.sync_visitor_role(member, player=True)
+        await self.birthdays.collect([row])
+        target = self.birthdays.prepare_nickname(row, nickname, current=member.nick)
         try:
-            if without_birthday_candles(member.nick) != nickname:
-                await member.edit(nick=nickname, reason="Wargaming nickname synchronization")
+            current = (
+                member.nick if self.birthdays.enabled else without_birthday_candles(member.nick)
+            )
+            if current != target:
+                await member.edit(nick=target, reason="Wargaming nickname synchronization")
         except discord.Forbidden:
             await self.notices.send(row, nickname_pending=True)
             if is_contact:
@@ -296,8 +307,12 @@ class VerifyBot(discord.Client):
         if current is None:
             await self.audit.emit("contact_added", discord_id)
         try:
-            if without_birthday_candles(member.nick) != nickname:
-                await member.edit(nick=nickname, reason="Clan contact nickname")
+            target = self.birthdays.prepare_nickname(row, nickname, current=member.nick)
+            current = (
+                member.nick if self.birthdays.enabled else without_birthday_candles(member.nick)
+            )
+            if current != target:
+                await member.edit(nick=target, reason="Clan contact nickname")
         except DISCORD_IO_ERRORS:
             await self.notices.send(row, contact=True, nickname_pending=True)
             raise ValueError("clan_nickname_error") from None
@@ -357,7 +372,12 @@ class VerifyBot(discord.Client):
         if after.guild.id != self.config.guild_id:
             return
         role_id = getattr(self.config, "clan_role_id", 0)
-        if not role_id and not getattr(self.config, "visitor_role_id", 0):
+        if (
+            not role_id
+            and not getattr(self.config, "visitor_role_id", 0)
+            and not self.birthdays.enabled
+            and self.birthdays.store.decoration(self.config.guild_id, after.id) is None
+        ):
             return
         old = {role.id for role in before.roles}
         new = {role.id for role in after.roles}
@@ -382,6 +402,11 @@ class VerifyBot(discord.Client):
                     and (role_id in old or self.store.contact(after.id))
                 ) or (contact_removed and role_id not in roles):
                     await self.remove_contact(after.id, member, was_contact=role_id in old)
+                if player_changed and self.config.role_id not in roles:
+                    try:
+                        await self.birthdays.cleanup(member, refresh=True)
+                    except DISCORD_IO_ERRORS:
+                        log.warning("Birthday cleanup pending for Discord member %s", after.id)
             except discord.NotFound:
                 # A queued player-addition event may outlive the member's stay.
                 # Departure alone must not free an existing clan reservation.
@@ -402,6 +427,11 @@ class VerifyBot(discord.Client):
             cleaned = await self.remove_contact(discord_id, member)
             await member.remove_roles(self.role(member), reason="Wargaming account unlinked")
             await self.sync_visitor_role(member, player=False)
+            try:
+                await self.birthdays.cleanup(member, refresh=True)
+            except DISCORD_IO_ERRORS:
+                cleaned = False
+                log.warning("Birthday cleanup pending for Discord member %s", discord_id)
         else:
             self.store.clear_tags(discord_id)
         self.store.unlink(discord_id)
@@ -446,6 +476,20 @@ class VerifyBot(discord.Client):
 
     @monthly_sync.before_loop
     async def before_monthly(self):
+        await self.wait_until_ready()
+
+    @tasks.loop(minutes=15)
+    async def birthday_dates(self):
+        rows = self.store.db.execute("SELECT * FROM links ORDER BY discord_id").fetchall()
+        await self.birthdays.collect(rows)
+
+    @tasks.loop(minutes=1)
+    async def birthday_jobs(self):
+        await self.birthdays.tick()
+
+    @birthday_dates.before_loop
+    @birthday_jobs.before_loop
+    async def before_birthdays(self):
         await self.wait_until_ready()
 
     def register_commands(self):

@@ -16,6 +16,7 @@ def bot(tmp_path):
         SimpleNamespace(
             database=str(tmp_path / "bot.sqlite3"),
             guild_id=1,
+            region="eu",
             role_id=2,
             clan_role_id=3,
             state_secret="x" * 32,
@@ -46,6 +47,7 @@ def bot(tmp_path):
     client.wg = SimpleNamespace(
         clan_membership=AsyncMock(return_value=(42, "commander", "TAG")),
         nickname=AsyncMock(return_value="Player"),
+        creation_dates=AsyncMock(return_value={}),
     )
     client.is_ready = lambda: True
     client.store.link(10, "eu", 100, "Player")

@@ -91,6 +91,7 @@ def env(tmp_path, monkeypatch, request):
     bot.wg = SimpleNamespace(
         find_exact=AsyncMock(side_effect=find),
         nickname=AsyncMock(side_effect=nickname),
+        creation_dates=AsyncMock(return_value={}),
         clan_membership=AsyncMock(side_effect=clan),
     )
 
@@ -783,7 +784,7 @@ async def test_timeout_never_reports_success_only(env, monkeypatch, caplog):
     assert "Admin operation timed out" in caplog.text
 
 
-async def test_4141_members_and_638_players_need_only_14_wg_requests_per_phase(env):
+async def test_4141_members_and_638_players_keep_wg_and_birthday_requests_batched(env):
     # Real WG batching, parsing and rate limiter; fake transport and Discord only.
     for i in range(4141):
         env.members[i + 100] = SimpleNamespace(
@@ -805,6 +806,12 @@ async def test_4141_members_and_638_players_need_only_14_wg_requests_per_phase(e
                 }
                 for name in params["search"].split(",")
             ]
+        if endpoint == "account/info":
+            assert params["fields"] == "created_at"
+            return {
+                account_id: {"created_at": 1352203200}
+                for account_id in params["account_id"].split(",")
+            }
         assert endpoint == "clans/accountinfo"
         return {account_id: None for account_id in params["account_id"].split(",")}
 
@@ -820,7 +827,11 @@ async def test_4141_members_and_638_players_need_only_14_wg_requests_per_phase(e
     assert env.bot.store.get(100) is None
     await inspection.apply()
     assert inspection.metrics["imported"] == 638
-    assert wg._request_once.await_count == 28
+    # 14 requests per identity review, plus seven date batches on confirmed import.
+    assert wg._request_once.await_count == 35
+    date_calls = [c for c in wg._request_once.await_args_list if c.args == ("account/info",)]
+    assert [len(c.kwargs["account_id"].split(",")) for c in date_calls] == [100] * 6 + [38]
+    assert env.bot.birthdays.store.created_at("eu", 10000) == 1352203200
     assert env.bot.store.get(100)["account_id"] == 10000
     assert env.bot.store.get(737)["account_id"] == 10637
     assert env.bot.store.get(738) is None

@@ -6,6 +6,8 @@ A Discord bot independent of Battle-Conquest: verify a World of Tanks PC EU acco
 
 The [bot logo](assets/branding/wot-verify-avatar.png) is ready to upload as a Discord avatar. See the [logo installation instructions](assets/branding/README.md) (French). The linked deployment and protocol guides remain in French.
 
+Anniversaires WoT : bougies dans le pseudo et annonce avec mention à 7 h, fuseau `Europe/Brussels`. La fonction reste désactivée avec `BIRTHDAY_CHANNEL_ID=0` pendant la préparation. Voir le [guide de configuration, reprise et bascule depuis l'ancien bot](docs/birthdays.md).
+
 ## How it works
 
 An administrator posts the persistent panel in **#verification** with `/setup`. Its button privately returns a login link valid for ten minutes. The player authenticates with Wargaming; the server checks the OpenID 2.0 assertion with Wargaming's `check_authentication` and retrieves the nickname through the public `account/info` API. Account IDs and nicknames supplied directly in the callback URL are never accepted as proof.
