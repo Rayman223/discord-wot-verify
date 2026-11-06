@@ -379,6 +379,10 @@ class Inspection:
             for review in group:
                 if review.member_id in fresh:
                     await self.apply_review(review, fresh[review.member_id], wg)
+            birthdays = getattr(self.bot, "birthdays", None)
+            if birthdays is not None:
+                imported = [self.bot.store.get(review.member_id) for review in group]
+                await birthdays.collect([row for row in imported if row is not None])
 
     async def apply_review(self, review, fresh, wg):
         try:

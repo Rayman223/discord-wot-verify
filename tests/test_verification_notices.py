@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import discord
 import pytest
 
+from wot_verify.birthdays import Birthdays
 from wot_verify.bot import VerifyBot
 from wot_verify.config import Config
 from wot_verify.store import Store
@@ -34,7 +35,9 @@ def env(tmp_path, request):
     channel.send = AsyncMock()
     bot.get_channel = lambda _: channel
     bot.fetch_channel = AsyncMock(return_value=channel)
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     member = SimpleNamespace(id=7, nick="Player", add_roles=AsyncMock(), edit=AsyncMock())
     bot.member = AsyncMock(return_value=member)
     bot.role = lambda _: SimpleNamespace(id=2)
@@ -161,6 +164,7 @@ async def test_notification_state_survives_restart_and_unlink_resets_it(env):
     await bot.sync(bot.store.get(7))
     bot.store.close()
     bot.store = Store(bot.config.database)
+    bot.birthdays = Birthdays(bot)
     await bot.sync(bot.store.get(7))
     assert channel.send.await_count == 1
     bot.store.unlink(7)

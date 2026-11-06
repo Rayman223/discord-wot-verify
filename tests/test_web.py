@@ -7,6 +7,7 @@ import discord
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
+from wot_verify.birthdays import Birthdays
 from wot_verify.security import States
 from wot_verify.store import Store
 from wot_verify.web import application
@@ -53,6 +54,23 @@ async def test_callback_uses_verified_identity_and_rejects_replay(env):
     assert "secret" not in await response.text()
     assert (await invoke(bot, client, token)).status == 400
     assert bot.openid.verify.await_count == 1
+
+
+@pytest.mark.parametrize("wg_available", [True, False])
+async def test_new_verification_records_creation_date_without_coupling_identity_success(
+    env, wg_available
+):
+    bot, client = env
+    bot.birthdays = Birthdays(bot)
+    created = 1352203200
+    bot.wg.creation_dates = AsyncMock(return_value={10: created})
+    if not wg_available:
+        bot.wg.creation_dates.side_effect = ValueError("wg_error")
+    response = await invoke(bot, client)
+    assert response.status == 200
+    assert bot.store.get(7)["account_id"] == 10
+    assert bot.birthdays.store.created_at("eu", 10) == (created if wg_available else None)
+    bot.sync.assert_awaited_once()
 
 
 async def test_bad_assertion_and_missing_browser_cookie(env):

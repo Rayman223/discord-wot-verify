@@ -1,4 +1,7 @@
 {
+  "birthday_heading": "Here are today's account anniversaries! 🎂",
+  "birthday_member_one": "• {member} {candles} celebrates {years} year on World of Tanks! 🥳",
+  "birthday_member": "• {member} {candles} celebrates {years} years on World of Tanks! 🥳",
   "panel_updated": "The verification panel has been updated.",
   "panel_elsewhere": "The verification panel already exists in <#{channel_id}>. Run /setup there. To move it, delete the old message first.",
   "panel_inaccessible": "The saved panel cannot be checked. Restore the bot’s access and Read Message History permission before retrying; no duplicate was posted.",
@@ -78,7 +81,7 @@
   "clan_removed": "The clan contact role, reservation and nickname suffix have been removed. Your account link is kept.",
   "clan_player_required": "You must have the player role before becoming a clan contact. Please verify or resync your account first.",
   "clan_tag_cleanup_error": "The clan contact role and reservation are removed, but Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions, then retry /admin_contact_remove.",
-  "unlinked_tag_pending": "Your account link, player role and clan contact role have been removed. Discord could not remove the clan tag from your nickname. Ask a moderator to check permissions and retry /admin_contact_remove.",
+  "unlinked_tag_pending": "Your account link, player role and clan contact role have been removed. Clan tag or birthday candle cleanup is still pending. Ask a moderator to check permissions; /admin_contact_remove retries tag cleanup, and candles will be cleaned automatically.",
   "command_admin_contact_remove": "Remove a clan contact role and free the clan slot after review",
   "command_setup": "Post the Wargaming verification panel in this channel",
   "command_resync": "Refresh your player role and World of Tanks nickname",

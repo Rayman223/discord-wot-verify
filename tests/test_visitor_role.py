@@ -48,7 +48,9 @@ def env(tmp_path):
     member.add_roles = AsyncMock(side_effect=add)
     member.remove_roles = AsyncMock(side_effect=remove)
     bot.member = AsyncMock(return_value=member)
-    bot.wg = SimpleNamespace(nickname=AsyncMock(return_value="Player"))
+    bot.wg = SimpleNamespace(
+        nickname=AsyncMock(return_value="Player"), creation_dates=AsyncMock(return_value={})
+    )
     bot.store.link(7, "eu", 100, "Player")
     yield bot, member, roles
     bot.store.close()

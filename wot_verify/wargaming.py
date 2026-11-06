@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import time
+from datetime import UTC, datetime
 from itertools import batched
 
 import aiohttp
@@ -137,6 +138,28 @@ class Wargaming:
     async def nickname(self, account_id):
         data = await self.request("account/info", account_id=str(account_id), fields="nickname")
         return self.parse_nickname(data, account_id)
+
+    async def creation_dates(self, account_ids):
+        """Read public UTC timestamps in bounded batches using the shared limiter."""
+        dates = {}
+        for group in batched(dict.fromkeys(account_ids), BATCH_SIZE):
+            try:
+                data = await self.request(
+                    "account/info", account_id=",".join(map(str, group)), fields="created_at"
+                )
+            except ValueError:
+                continue
+            for account_id in group:
+                account = data.get(str(account_id))
+                value = account.get("created_at") if isinstance(account, dict) else None
+                if type(value) is not int or not 0 < value <= time.time():
+                    continue
+                try:
+                    datetime.fromtimestamp(value, UTC)
+                except (ValueError, OverflowError, OSError):
+                    continue
+                dates[account_id] = value
+        return dates
 
     @staticmethod
     def parse_nickname(data, account_id):

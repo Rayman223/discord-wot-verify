@@ -196,6 +196,9 @@ def application(bot):
                 await bot.member(discord_id)
                 new_link = bot.store.get(discord_id) is None
                 bot.store.link(discord_id, bot.config.region, account_id, nickname)
+                birthdays = getattr(bot, "birthdays", None)
+                if birthdays is not None:
+                    await birthdays.collect([bot.store.get(discord_id)])
                 bot.store.queue_verification_notice(
                     discord_id, bot.config.region, account_id, channel_id
                 )

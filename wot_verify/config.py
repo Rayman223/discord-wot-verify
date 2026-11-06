@@ -20,6 +20,7 @@ class Config:
     locale: str = "en"
     log_channel_id: int = 0
     visitor_role_id: int = 0
+    birthday_channel_id: int = 0
 
     @classmethod
     def load(cls):
@@ -37,9 +38,12 @@ class Config:
             port=int(os.getenv("PORT", "8080")),
             clan_role_id=int(os.getenv("CLAN_CONTACT_ROLE_ID", "0")),
             visitor_role_id=int(os.getenv("VISITOR_ROLE_ID", "0")),
+            birthday_channel_id=int(os.getenv("BIRTHDAY_CHANNEL_ID", "0")),
         )
         if not 0 <= config.log_channel_id < 2**63:
             raise ValueError("LOG_CHANNEL_ID must be a positive channel ID, or 0 to disable")
+        if not 0 <= config.birthday_channel_id < 2**63:
+            raise ValueError("BIRTHDAY_CHANNEL_ID must be a positive channel ID, or 0 to disable")
         if config.locale not in SUPPORTED_LOCALES:
             raise ValueError("LOCALE must be en or fr")
         url = urlsplit(config.public_url)
