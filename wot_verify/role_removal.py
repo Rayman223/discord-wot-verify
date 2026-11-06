@@ -56,7 +56,11 @@ async def request_role_removal(bot, interaction):
                 message = bot.t("remove_role_nothing")
     except (*DISCORD_IO_ERRORS, ValueError) as error:
         message = error_message(bot, error)
-    await interaction.followup.send(message, view=view, ephemeral=True)
+    # Webhook.send accepts an omitted view, but rejects an explicit None.
+    if view is None:
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.followup.send(message, view=view, ephemeral=True)
 
 
 class RoleRemovalView(discord.ui.View):

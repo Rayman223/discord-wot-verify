@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import discord
 import pytest
+from discord.webhook.async_ import async_context
 
 from wot_verify.bot import LoginView, VerifyBot
 from wot_verify.config import Config
@@ -363,7 +364,7 @@ async def test_member_without_roles_or_link_has_nothing_to_remove(env, locale, v
     assert ids(member) == before_roles
     assert list(bot.store.db.iterdump()) == before
     key = "remove_role_already_visitor" if visitor == "present" else "remove_role_nothing"
-    click.followup.send.assert_awaited_once_with(bot.t(key), view=None, ephemeral=True)
+    click.followup.send.assert_awaited_once_with(bot.t(key), ephemeral=True)
 
 
 async def test_visitor_with_remaining_wargaming_link_still_gets_cleanup_confirmation(env):
@@ -374,5 +375,49 @@ async def test_visitor_with_remaining_wargaming_link_still_gets_cleanup_confirma
     assert bot.store.get(7) is not None
     assert click.followup.send.await_args.args[0] == bot.t("remove_player_confirmation")
     assert isinstance(click.followup.send.await_args.kwargs["view"], RoleRemovalView)
+    member.remove_roles.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
+
+
+@pytest.mark.parametrize("state", ["visitor", "nothing", "error", "player", "contact"])
+async def test_withdrawal_replies_use_real_discord_webhook_validation(env, monkeypatch, state):
+    bot, member, roles = env
+    key = "remove_player_confirmation"
+    has_menu = state in {"player", "contact"}
+    if state in {"visitor", "nothing"}:
+        bot.store.unlink(7)
+        member.roles = [roles[5]] if state == "nothing" else [roles[4], roles[5]]
+        key = "remove_role_nothing" if state == "nothing" else "remove_role_already_visitor"
+    elif state == "error":
+        bot.config = replace(bot.config, visitor_role_id=0)
+        key = "remove_role_visitor_required"
+    elif state == "contact":
+        member.roles.append(roles[3])
+        key = "remove_role_choice"
+    # Run discord.py's genuine send validation and message serialization.
+    # Only transport and construction of the returned Discord message are doubled.
+    webhook = discord.Webhook(
+        {"id": "123456789012345678", "type": 3, "token": "unused"},
+        session=SimpleNamespace(),
+        state=bot._connection,
+    )
+    monkeypatch.setattr(
+        discord.Webhook,
+        "_create_message",
+        lambda self, data, **kwargs: SimpleNamespace(id=123),
+    )
+    adapter = SimpleNamespace(execute_webhook=AsyncMock(return_value={}))
+    token = async_context.set(adapter)
+    try:
+        click = interaction()
+        click.followup = webhook
+        await LoginView(bot).remove_role(click)
+    finally:
+        async_context.reset(token)
+    adapter.execute_webhook.assert_awaited_once()
+    payload = adapter.execute_webhook.await_args.kwargs["payload"]
+    assert payload["content"] == bot.t(key)
+    assert payload["flags"] & 64  # Discord's EPHEMERAL flag.
+    assert bool(payload.get("components")) is has_menu
     member.remove_roles.assert_not_awaited()
     member.add_roles.assert_not_awaited()
