@@ -20,6 +20,8 @@ For the original server, add `VISITOR_ROLE_ID=475356542716084238` to `.env`, or 
 
 If Discord rejects the switch, commands report the failure and retain the link for another attempt. Failed manual role changes are recorded in the bot logs. After fixing permissions, assign and remove the player role again, or retry unlinking. Absent members cannot receive roles remotely.
 
+The panel’s **Remove a role** button lets members withdraw themselves. Without a clan contact role, it removes the player role and Wargaming link, then grants visitor. Clan contacts receive a private choice: **remove all roles** removes player/contact, unlinks Wargaming and grants visitor; **remove clan contact** frees the clan slot and removes its nickname tag while keeping player and the link. Other roles are kept. The choice belongs to its author, expires after three minutes and can be used once. Discord failures are reported for retry; a blocked nickname cleanup remains explicitly pending. Full withdrawal requires `VISITOR_ROLE_ID` configured. After deployment, run `/setup` in the saved panel’s channel to display the third button. No migration or new variable is needed.
+
 ### Public confirmations and returning to Discord
 
 Once the player role has been confirmed, the bot posts a confirmation in the saved panel's channel, or in the button's original channel if no panel is saved. It mentions only the player and displays the role name as plain text, without mentioning the role. Messages follow `LOCALE` and are automatically deleted after 30 seconds.
