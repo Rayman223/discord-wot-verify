@@ -16,6 +16,7 @@ from .nicknames import without_birthday_candles, without_managed_tag
 from .notices import VerificationNotices
 from .openid import OpenID
 from .reports import diagnose_report, status_report
+from .role_removal import request_role_removal
 from .security import States
 from .store import Store
 from .wargaming import CONTACT_RANKS, Wargaming
@@ -42,6 +43,16 @@ class LoginView(discord.ui.View):
         )
         contact.callback = self.clan_contact
         self.add_item(contact)
+        remove = discord.ui.Button(
+            label=self.bot.t("remove_role_button"),
+            custom_id="wot:remove-role:v1",
+            style=discord.ButtonStyle.danger,
+        )
+        remove.callback = self.remove_role
+        self.add_item(remove)
+
+    async def remove_role(self, interaction):
+        await request_role_removal(self.bot, interaction)
 
     async def clan_contact(self, interaction):
         await interaction.response.defer(ephemeral=True)
