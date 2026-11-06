@@ -85,6 +85,26 @@ async def contact_menu(env):
     return view
 
 
+async def player_menu(env):
+    bot, member, _ = env
+    before = list(bot.store.db.iterdump())
+    click = interaction()
+    await LoginView(bot).children[2].callback(click)
+    member.remove_roles.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
+    member.edit.assert_not_awaited()
+    assert list(bot.store.db.iterdump()) == before
+    assert click.followup.send.await_args.args == (bot.t("remove_player_confirmation"),)
+    assert click.followup.send.await_args.kwargs["ephemeral"] is True
+    view = click.followup.send.await_args.kwargs["view"]
+    assert isinstance(view, RoleRemovalView)
+    assert [button.label for button in view.children] == [
+        bot.t("remove_player_confirm_button"),
+        bot.t("remove_role_cancel_button"),
+    ]
+    return view
+
+
 @pytest.mark.parametrize("locale", ["fr", "en"])
 async def test_setup_updates_persistent_panel_with_withdrawal_button(env, locale):
     bot, _, _ = env
@@ -112,17 +132,63 @@ async def test_setup_updates_persistent_panel_with_withdrawal_button(env, locale
 
 
 @pytest.mark.parametrize("linked", [True, False])
-async def test_player_withdrawal_restores_visitor_and_preserves_other_roles(env, linked):
+@pytest.mark.parametrize("locale", ["fr", "en"])
+async def test_player_withdrawal_restores_visitor_and_preserves_other_roles(env, linked, locale):
     bot, member, _ = env
+    bot.config = replace(bot.config, locale=locale)
     if not linked:
         bot.store.unlink(7)
+    view = await player_menu(env)
     click = interaction()
-    await LoginView(bot).children[2].callback(click)
+    await view.children[0].callback(click)
     assert ids(member) == {4, 5}
     assert bot.store.get(7) is None
-    assert click.followup.send.await_args.kwargs == {"view": None, "ephemeral": True}
-    assert bot.t("remove_role_visitor") in click.followup.send.await_args.args[0]
+    result = click.edit_original_response.await_args.kwargs
+    assert result["view"] is None
+    assert bot.t("unlinked") in result["content"]
+    assert bot.t("remove_role_visitor") in result["content"]
+    assert view.is_finished()
     member.edit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("locale", ["fr", "en"])
+async def test_player_withdrawal_cancel_keeps_roles_and_link_and_closes_confirmation(env, locale):
+    bot, member, _ = env
+    bot.config = replace(bot.config, locale=locale)
+    before = list(bot.store.db.iterdump())
+    view = await player_menu(env)
+    click = interaction()
+    await view.children[1].callback(click)
+    assert ids(member) == {2, 5}
+    assert list(bot.store.db.iterdump()) == before
+    member.remove_roles.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
+    click.edit_original_response.assert_awaited_once_with(
+        content=bot.t("remove_role_cancelled"),
+        view=None,
+    )
+    assert view.is_finished()
+    replay = interaction()
+    await view.children[0].callback(replay)
+    member.remove_roles.assert_not_awaited()
+    assert bot.store.get(7) is not None
+    replay.followup.send.assert_awaited_once_with(bot.t("remove_role_expired"), ephemeral=True)
+
+
+@pytest.mark.parametrize("action", [0, 1])
+@pytest.mark.parametrize("wrong_owner", [False, True])
+async def test_player_confirmation_buttons_reject_other_members_and_servers(
+    env, action, wrong_owner
+):
+    bot, member, _ = env
+    view = await player_menu(env)
+    click = interaction(user_id=8) if wrong_owner else interaction(guild_id=99)
+    await view.children[action].callback(click)
+    key = "remove_role_owner_only" if wrong_owner else "wrong_server"
+    click.response.send_message.assert_awaited_once_with(bot.t(key), ephemeral=True)
+    assert bot.store.get(7) is not None
+    member.remove_roles.assert_not_awaited()
+    assert not view.is_finished()
 
 
 async def test_contacts_choose_between_two_private_actions(env):
@@ -190,9 +256,10 @@ async def test_private_choice_cannot_target_another_member(env, contact_only):
     )
 
 
-async def test_expired_choice_does_not_modify_roles(env):
+@pytest.mark.parametrize("contact_choice", [True, False])
+async def test_expired_choice_does_not_modify_roles(env, contact_choice):
     bot, member, _ = env
-    view = RoleRemovalView(bot, 7)
+    view = RoleRemovalView(bot, 7, contact_choice=contact_choice)
     view.expires_at = 0
     click = interaction()
     await view.remove_all(click)
@@ -250,13 +317,15 @@ async def test_blocked_tag_reports_partial_result(env, contact_only):
 async def test_visitor_assignment_failure_retains_link_and_can_be_retried(env):
     bot, member, _ = env
     add = member.add_roles.side_effect
+    view = await player_menu(env)
     member.add_roles.side_effect = TimeoutError()
     click = interaction()
-    await LoginView(bot).remove_role(click)
+    await view.children[0].callback(click)
     assert bot.store.get(7) is not None
-    click.followup.send.assert_awaited_once_with(bot.t("discord_error"), view=None, ephemeral=True)
+    assert not view.is_finished()
+    click.followup.send.assert_awaited_once_with(bot.t("discord_error"), ephemeral=True)
     member.add_roles.side_effect = add
-    await LoginView(bot).remove_role(interaction())
+    await view.children[0].callback(interaction())
     assert ids(member) == {4, 5}
     assert bot.store.get(7) is None
 

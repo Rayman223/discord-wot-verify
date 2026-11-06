@@ -46,7 +46,10 @@ async def request_role_removal(bot, interaction):
                 or bot.store.contact(member.id)
                 or bot.store.contact_tags(member.id)
             ):
-                message = await remove_all(bot, member.id)
+                if not getattr(bot.config, "visitor_role_id", 0):
+                    raise ValueError("remove_role_visitor_required")
+                view = RoleRemovalView(bot, interaction.user.id, contact_choice=False)
+                message = bot.t("remove_player_confirmation")
             else:
                 message = bot.t("remove_role_nothing")
     except (*DISCORD_IO_ERRORS, ValueError) as error:
@@ -55,16 +58,24 @@ async def request_role_removal(bot, interaction):
 
 
 class RoleRemovalView(discord.ui.View):
-    def __init__(self, bot, owner_id):
+    def __init__(self, bot, owner_id, *, contact_choice=True):
         super().__init__(timeout=180)
         self.bot = bot
         self.owner_id = owner_id
         self.expires_at = time.monotonic() + 180
         self.completed = False
-        for key, callback, style in (
-            ("remove_all_roles_button", self.remove_all, discord.ButtonStyle.danger),
-            ("remove_contact_button", self.remove_contact, discord.ButtonStyle.secondary),
-        ):
+        choices = (
+            (
+                ("remove_all_roles_button", self.remove_all, discord.ButtonStyle.danger),
+                ("remove_contact_button", self.remove_contact, discord.ButtonStyle.secondary),
+            )
+            if contact_choice
+            else (
+                ("remove_player_confirm_button", self.remove_all, discord.ButtonStyle.danger),
+                ("remove_role_cancel_button", self.cancel, discord.ButtonStyle.secondary),
+            )
+        )
+        for key, callback, style in choices:
             button = discord.ui.Button(label=bot.t(key), style=style)
             button.callback = callback
             self.add_item(button)
@@ -75,7 +86,10 @@ class RoleRemovalView(discord.ui.View):
     async def remove_contact(self, interaction):
         await self.remove(interaction, contact_only=True)
 
-    async def remove(self, interaction, *, contact_only):
+    async def cancel(self, interaction):
+        await self.remove(interaction, contact_only=False, cancelled=True)
+
+    async def remove(self, interaction, *, contact_only, cancelled=False):
         if interaction.guild_id != self.bot.config.guild_id:
             return await interaction.response.send_message(
                 self.bot.t("wrong_server"), ephemeral=True
@@ -89,7 +103,9 @@ class RoleRemovalView(discord.ui.View):
             async with self.bot.lock:
                 if self.completed or self.is_finished() or time.monotonic() >= self.expires_at:
                     raise ValueError("remove_role_expired")
-                if contact_only:
+                if cancelled:
+                    message = self.bot.t("remove_role_cancelled")
+                elif contact_only:
                     cleaned = await self.bot.remove_contact(self.owner_id)
                     message = self.bot.t("clan_removed" if cleaned else "clan_tag_cleanup_error")
                 else:

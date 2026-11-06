@@ -218,5 +218,9 @@
   "admin_player_error": "Discord : {discord_name} (ID {discord_id}) · {wg_label} : {wg_name} (ID {account_id}) — {reasons}",
   "admin_wot_stored": "WoT enregistré",
   "admin_discord_absent": "membre absent du serveur",
-  "admin_no_errors": "Aucune anomalie signalée parmi les comptes contrôlés."
+  "admin_no_errors": "Aucune anomalie signalée parmi les comptes contrôlés.",
+  "remove_player_confirmation": "Confirmez-vous le retrait de votre rôle joueur et de votre liaison Wargaming ? Vous récupérerez le rôle visiteur. Un éventuel rôle de contact de clan et sa réservation seront également retirés. Vos autres rôles seront conservés.",
+  "remove_player_confirm_button": "Confirmer le retrait",
+  "remove_role_cancel_button": "Annuler",
+  "remove_role_cancelled": "Retrait annulé. Vos rôles et votre liaison Wargaming sont conservés."
 }

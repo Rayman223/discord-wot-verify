@@ -218,5 +218,9 @@
   "admin_player_error": "Discord: {discord_name} (ID {discord_id}) · {wg_label}: {wg_name} (ID {account_id}) — {reasons}",
   "admin_wot_stored": "Stored WoT",
   "admin_discord_absent": "member absent from the server",
-  "admin_no_errors": "No anomalies reported among the checked accounts."
+  "admin_no_errors": "No anomalies reported among the checked accounts.",
+  "remove_player_confirmation": "Confirm removing your player role and Wargaming link? You will receive the visitor role. Any clan contact role and its reservation will also be removed. Your other roles will be kept.",
+  "remove_player_confirm_button": "Confirm withdrawal",
+  "remove_role_cancel_button": "Cancel",
+  "remove_role_cancelled": "Withdrawal cancelled. Your roles and Wargaming link are kept."
 }
