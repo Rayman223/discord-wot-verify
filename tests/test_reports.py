@@ -168,7 +168,16 @@ async def test_status_no_clan_is_distinct_from_unavailable(env, kind):
 
 
 @pytest.mark.parametrize(
-    "state", ["active", "missing_role", "orphan_role", "changed_clan", "lost_rank", "wg_failure"]
+    "state",
+    [
+        "active",
+        "personnel",
+        "missing_role",
+        "orphan_role",
+        "changed_clan",
+        "lost_rank",
+        "wg_failure",
+    ],
 )
 async def test_status_clan_contact_states(env, state):
     bot, member, roles, _ = env
@@ -177,6 +186,8 @@ async def test_status_clan_contact_states(env, state):
         bot.store.reserve_contact(7, "eu", 42)
     if state != "missing_role":
         member.roles.append(roles[3])
+    if state == "personnel":
+        bot.wg.clan_membership.return_value = (42, "personnel_officer", "TAG")
     if state == "changed_clan":
         bot.wg.clan_membership.return_value = (43, "commander", "NEW")
     if state == "lost_rank":
@@ -186,7 +197,7 @@ async def test_status_clan_contact_states(env, state):
     before = list(bot.store.db.iterdump())
     report = await status_report(bot, 7)
     expected = next(f.value for f in report.fields if f.name == bot.t("status_expected_nickname"))
-    if state == "active":
+    if state in {"active", "personnel"}:
         assert expected == "Player [TAG]"
     elif state in {"changed_clan", "lost_rank"}:
         assert bot.t("clan_review") in report.description

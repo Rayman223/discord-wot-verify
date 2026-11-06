@@ -59,7 +59,7 @@ A daily check refreshes links whose last successful synchronization was at least
 
 ### Clan contacts
 
-The second panel button, **Become a clan contact**, checks for commander, executive officer or recruitment officer rank, assigns a separate role and uses the nickname `WargamingNickname [TAG]`. Only one contact is allowed per clan. A second candidate is referred to a moderator for manual verification; no existing reservation is replaced. Enable it with `CLAN_CONTACT_ROLE_ID` in `.env`, then publish the panel with `/setup`. See the [clan contacts guide](docs/clan-contacts.md) for configuration and limitations.
+The second panel button, **Become a clan contact**, checks for commander, executive officer, personnel officer or recruitment officer rank, assigns a separate role and uses the nickname `WargamingNickname [TAG]`. Only one contact is allowed per clan. A second candidate is referred to a moderator for manual verification; no existing reservation is replaced. Enable it with `CLAN_CONTACT_ROLE_ID` in `.env`, then publish the panel with `/setup`. See the [clan contacts guide](docs/clan-contacts.md) for configuration and limitations.
 
 Birthday candles (`🕯`, including emoji/text presentation variants) added by another bot are ignored when comparing Discord and WoT nicknames, including names with a clan tag. `/stats`, import, `/status` and synchronization keep checking the underlying identity; candles alone do not trigger a rename. Other emoji, genuine nickname differences and incorrect clan tags remain discrepancies. Automatic account-anniversary decorations are tracked separately in [issue #32](https://github.com/Rayman223/discord-wot-verify/issues/32).
 

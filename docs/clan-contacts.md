@@ -1,6 +1,6 @@
 # Contacts de clan
 
-Le panneau `/setup` comporte un second bouton **Become a clan contact**. Le membre doit avoir lié son compte via Wargaming OpenID et posséder le rôle joueur. Le bot interroge `clans/accountinfo` sur la région configurée et accepte exactement les grades `commander`, `executive_officer` et `recruitment_officer`. Les grades sont vérifiés côté serveur à chaque demande, sans faire confiance à une information Discord ou à un paramètre fourni par le joueur.
+Le panneau `/setup` comporte un second bouton **Become a clan contact**. Le membre doit avoir lié son compte via Wargaming OpenID et posséder le rôle joueur. Le bot interroge `clans/accountinfo` sur la région configurée et accepte exactement les grades Commandant (`commander`), Commandant en second (`executive_officer`), Officier du personnel (`personnel_officer`) et Officier de recrutement (`recruitment_officer`). Les grades sont vérifiés côté serveur à chaque demande, sans faire confiance à une information Discord ou à un paramètre fourni par le joueur.
 
 Une contrainte SQLite garantit un seul contact par couple région/clan, et un seul clan par contact. Si la place appartient déjà à un autre membre, le bouton répond en privé : **This clan already has a contact. Please ask a moderator for a manual verification.** Aucun remplacement ni message automatique à un modérateur n'est effectué.
 

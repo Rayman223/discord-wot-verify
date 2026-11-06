@@ -6,7 +6,9 @@ from itertools import batched
 
 import aiohttp
 
-CONTACT_RANKS = frozenset({"commander", "executive_officer", "recruitment_officer"})
+CONTACT_RANKS = frozenset(
+    {"commander", "executive_officer", "personnel_officer", "recruitment_officer"}
+)
 log = logging.getLogger(__name__)
 UNKNOWN = object()
 BATCH_SIZE = 100
