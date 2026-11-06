@@ -223,6 +223,14 @@ class Birthdays:
         heading = self.bot.t("birthday_heading")
         content, rows = heading, []
         for row, age in celebrants:
+            current = self.bot.store.get(row["discord_id"])
+            if current is None or (current["region"], current["account_id"]) != (
+                row["region"],
+                row["account_id"],
+            ):
+                # A link may have moved to another Discord account between member
+                # checks. Ignore the obsolete snapshot before reserving unique keys.
+                continue
             if self.store.reserved(guild_id, day.isoformat(), row):
                 continue
             line = self.bot.t("birthday_member_one" if age == 1 else "birthday_member").format(
@@ -326,6 +334,13 @@ class Birthdays:
                                 (pending["id"],),
                             )
                         self._next_check = 0
+                        continue
+                    now = fixed_now or datetime.now(UTC)
+                    local = now.astimezone(BRUSSELS)
+                    if local.hour < 7 or pending["day"] != local.date().isoformat():
+                        # Resolving the channel, waiting for the bot lock and checking
+                        # members can cross midnight. Recheck just before posting.
+                        self.store.state(pending["id"], "cancelled")
                         continue
                     self.store.state(pending["id"], "sending", now=int(now.timestamp()))
                     try:

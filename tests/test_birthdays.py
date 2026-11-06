@@ -635,3 +635,58 @@ async def test_no_lock_held_while_collecting_metadata(env):
 
     env.bot.wg.creation_dates.side_effect = dates
     await env.service.collect([env.bot.store.get(7)], now=NOW)
+
+
+async def test_account_transfer_between_member_checks_does_not_abort_announcements(env):
+    env.add(7)
+    env.add(8)
+    first = await env.service.process_member(7, NOW)
+    # A member unlinks, then verifies the same WG account with another Discord account
+    # while the daily scan yields between members. Both snapshots describe account 107.
+    env.bot.store.unlink(7)
+    env.bot.store.unlink(8)
+    env.bot.store.link(8, "eu", 107, "Player")
+    second = await env.service.process_member(8, NOW)
+    env.service.queue([first, second], NOW.astimezone(BRUSSELS).date(), NOW)
+    await env.service.deliver(NOW)
+    assert len(env.posted) == 1
+    assert "<@8>" in env.posted[0].content and "<@7>" not in env.posted[0].content
+
+
+@pytest.mark.parametrize("delayed_stage", ["channel", "member"])
+async def test_midnight_during_delivery_never_pings_yesterdays_birthdays(
+    env, monkeypatch, delayed_stage
+):
+    env.add()
+    late = NOW.replace(hour=22, minute=59, second=59)  # 23:59:59 Brussels.
+    clock = [late]
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0].astimezone(tz or UTC)
+
+    monkeypatch.setattr("wot_verify.birthdays.datetime", Clock)
+    env.service.queue([(env.bot.store.get(7), 14)], late.astimezone(BRUSSELS).date(), late)
+    if delayed_stage == "channel":
+        original = env.service.channel
+
+        async def delayed_channel(identifier):
+            channel = await original(identifier)
+            clock[0] += timedelta(seconds=2)
+            return channel
+
+        env.service.channel = delayed_channel
+    else:
+        original = env.bot.member.side_effect
+
+        async def delayed_member(identifier):
+            member = await original(identifier)
+            clock[0] += timedelta(seconds=2)
+            return member
+
+        env.bot.member.side_effect = delayed_member
+    await env.service.deliver()
+    env.channel.send.assert_not_awaited()
+    saved = env.bot.store.db.execute("SELECT state FROM birthday_announcements").fetchone()
+    assert saved["state"] == "cancelled"
