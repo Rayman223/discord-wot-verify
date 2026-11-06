@@ -2,6 +2,7 @@
 
 import discord
 
+from .nicknames import without_birthday_candles
 from .wargaming import CONTACT_RANKS
 
 
@@ -102,12 +103,13 @@ async def status_report(bot, discord_id):
         hints.append(bot.t("status_contact_review"))
     if pending_tags and not has_contact:
         hints.append(bot.t("status_tag_pending"))
-    if bot.config.role_id not in roles or (expected is not None and member.nick != expected):
+    current = without_birthday_candles(member.nick)
+    if bot.config.role_id not in roles or (expected is not None and current != expected):
         hints.append(bot.t("status_resync_hint"))
     me = member.guild.me
     if (
         expected is not None
-        and member.nick != expected
+        and current != expected
         and me is not None
         and (
             member.id == member.guild.owner_id

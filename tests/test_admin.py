@@ -902,3 +902,60 @@ def test_report_without_errors_has_no_member_detail_rows(env):
     lines = report_lines(env.bot, {}, inspection)
     details = lines[lines.index(env.bot.t("admin_errors_title")) + 1 :]
     assert details == [env.bot.t("admin_no_errors")]
+
+
+@pytest.mark.parametrize(
+    "name,contact",
+    [
+        ("🕯 Player", False),
+        ("Player 🕯️🕯️", False),
+        ("Player [TAG] 🕯", True),
+        ("🕯️ Player 🕯 [TAG] 🕯️", True),
+    ],
+)
+async def test_scan_and_import_ignore_candles_without_renaming_member(env, name, contact):
+    member = env.add(
+        name="Player [TAG]" if contact else "Player", roles=(2, 3) if contact else (2,)
+    )
+    member.nick = member.display_name = name
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    assert inspection.metrics["importable"] == 1
+    assert inspection.metrics["nickname_mismatch"] == 0
+    assert inspection.metrics["desynchronized"] == 0
+    assert inspection.metrics["tag_mismatch"] == 0
+    await inspection.apply()
+    assert inspection.metrics["imported"] == 1
+    assert env.bot.store.get(7)["nickname"] == "Player"
+    if contact:
+        assert env.bot.store.contact(7)["clan_id"] == 42
+    assert member.nick == name
+    member.edit.assert_not_awaited()
+
+
+async def test_candles_do_not_hide_duplicate_players_or_invalid_tags(env):
+    first = env.add()
+    first.nick = "Player 🕯️"
+    env.add(discord_id=8)
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    assert inspection.metrics["identity_conflict"] == 2
+    await inspection.apply()
+    assert env.bot.store.get(7) is None and env.bot.store.get(8) is None
+    env.members.pop(8)
+    first.nick = "Player [BAD] 🕯️"
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    assert inspection.metrics["tag_mismatch"] == 1
+    assert inspection.metrics["desynchronized"] == 1
+
+
+async def test_only_candles_changing_during_import_does_not_skip_valid_member(env):
+    member = env.add()
+    inspection = Inspection(env.bot)
+    await inspection.scan(env.guild)
+    member.nick = "Player 🕯️🕯️"
+    await inspection.apply()
+    assert inspection.metrics["imported"] == 1
+    assert inspection.metrics["changed_during_scan"] == 0
+    member.edit.assert_not_awaited()
