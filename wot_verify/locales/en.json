@@ -222,5 +222,6 @@
   "remove_player_confirmation": "Confirm removing your player role and Wargaming link? You will receive the visitor role. Any clan contact role and its reservation will also be removed. Your other roles will be kept.",
   "remove_player_confirm_button": "Confirm withdrawal",
   "remove_role_cancel_button": "Cancel",
-  "remove_role_cancelled": "Withdrawal cancelled. Your roles and Wargaming link are kept."
+  "remove_role_cancelled": "Withdrawal cancelled. Your roles and Wargaming link are kept.",
+  "remove_role_already_visitor": "You have no role to remove. You already have the visitor role."
 }

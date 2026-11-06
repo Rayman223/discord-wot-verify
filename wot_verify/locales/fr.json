@@ -222,5 +222,6 @@
   "remove_player_confirmation": "Confirmez-vous le retrait de votre rôle joueur et de votre liaison Wargaming ? Vous récupérerez le rôle visiteur. Un éventuel rôle de contact de clan et sa réservation seront également retirés. Vos autres rôles seront conservés.",
   "remove_player_confirm_button": "Confirmer le retrait",
   "remove_role_cancel_button": "Annuler",
-  "remove_role_cancelled": "Retrait annulé. Vos rôles et votre liaison Wargaming sont conservés."
+  "remove_role_cancelled": "Retrait annulé. Vos rôles et votre liaison Wargaming sont conservés.",
+  "remove_role_already_visitor": "Vous n’avez aucun rôle à supprimer. Vous avez déjà le rôle visiteur."
 }
