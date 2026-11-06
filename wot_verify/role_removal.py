@@ -50,6 +50,8 @@ async def request_role_removal(bot, interaction):
                     raise ValueError("remove_role_visitor_required")
                 view = RoleRemovalView(bot, interaction.user.id, contact_choice=False)
                 message = bot.t("remove_player_confirmation")
+            elif getattr(bot.config, "visitor_role_id", 0) in roles:
+                message = bot.t("remove_role_already_visitor")
             else:
                 message = bot.t("remove_role_nothing")
     except (*DISCORD_IO_ERRORS, ValueError) as error:

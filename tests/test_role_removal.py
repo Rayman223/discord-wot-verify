@@ -344,12 +344,35 @@ async def test_unconfigured_visitor_blocks_full_withdrawal_but_not_contact_only(
     assert bot.store.get(7) is not None
 
 
-async def test_member_without_roles_or_link_has_nothing_to_remove(env):
+@pytest.mark.parametrize("locale", ["fr", "en"])
+@pytest.mark.parametrize("visitor", ["present", "absent", "disabled"])
+async def test_member_without_roles_or_link_has_nothing_to_remove(env, locale, visitor):
     bot, member, roles = env
+    bot.config = replace(
+        bot.config, locale=locale, visitor_role_id=0 if visitor == "disabled" else 4
+    )
     bot.store.unlink(7)
-    member.roles = [roles[4], roles[5]]
+    member.roles = [roles[5]] if visitor == "absent" else [roles[4], roles[5]]
+    before = list(bot.store.db.iterdump())
+    before_roles = ids(member)
     click = interaction()
     await LoginView(bot).remove_role(click)
     member.remove_roles.assert_not_awaited()
     member.add_roles.assert_not_awaited()
-    assert bot.t("remove_role_nothing") == click.followup.send.await_args.args[0]
+    member.edit.assert_not_awaited()
+    assert ids(member) == before_roles
+    assert list(bot.store.db.iterdump()) == before
+    key = "remove_role_already_visitor" if visitor == "present" else "remove_role_nothing"
+    click.followup.send.assert_awaited_once_with(bot.t(key), view=None, ephemeral=True)
+
+
+async def test_visitor_with_remaining_wargaming_link_still_gets_cleanup_confirmation(env):
+    bot, member, roles = env
+    member.roles = [roles[4], roles[5]]
+    click = interaction()
+    await LoginView(bot).remove_role(click)
+    assert bot.store.get(7) is not None
+    assert click.followup.send.await_args.args[0] == bot.t("remove_player_confirmation")
+    assert isinstance(click.followup.send.await_args.kwargs["view"], RoleRemovalView)
+    member.remove_roles.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
