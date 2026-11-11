@@ -508,6 +508,33 @@ class VerifyBot(discord.Client):
             report = await status_report(self, interaction.user.id)
             await interaction.followup.send(embed=report, ephemeral=True)
 
+        @self.tree.command(description=self.t("command_admin_birthday_preview"))
+        @app_commands.guild_only()
+        @app_commands.default_permissions(administrator=True)
+        @app_commands.checks.has_permissions(administrator=True)
+        @app_commands.describe(
+            years=self.t("birthday_preview_years"), member=self.t("birthday_preview_member")
+        )
+        async def admin_birthday_preview(
+            interaction: discord.Interaction,
+            years: app_commands.Range[int, 1, 100] = 14,
+            member: discord.Member | None = None,
+        ):
+            if interaction.guild_id != self.config.guild_id:
+                raise ValueError("wrong_server")
+            await interaction.response.defer(ephemeral=False)
+            target = member or interaction.user
+            content = "\n".join(
+                (
+                    self.t("birthday_preview_note"),
+                    self.t("birthday_heading"),
+                    self.birthdays.announcement_line(target.id, years),
+                )
+            )
+            await interaction.followup.send(
+                content, ephemeral=False, allowed_mentions=discord.AllowedMentions.none()
+            )
+
         @self.tree.command(description=self.t("command_diagnose"))
         @app_commands.guild_only()
         @app_commands.default_permissions(administrator=True)

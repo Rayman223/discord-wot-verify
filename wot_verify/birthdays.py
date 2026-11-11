@@ -225,6 +225,11 @@ class Birthdays:
                 return row, age
         return None
 
+    def announcement_line(self, discord_id, age):
+        return self.bot.t("birthday_member_one" if age == 1 else "birthday_member").format(
+            member=f"<@{discord_id}>", candles="🕯" * age, years=age
+        )
+
     def queue(self, celebrants, day, now):
         guild_id = self.bot.config.guild_id
         heading = self.bot.t("birthday_heading")
@@ -240,9 +245,7 @@ class Birthdays:
                 continue
             if self.store.reserved(guild_id, day.isoformat(), row):
                 continue
-            line = self.bot.t("birthday_member_one" if age == 1 else "birthday_member").format(
-                member=f"<@{row['discord_id']}>", candles="🕯" * age, years=age
-            )
+            line = self.announcement_line(row["discord_id"], age)
             # Keep room below Discord's 2000-character limit, also for astral emoji.
             if rows and (len((content + "\n" + line).encode("utf-16-le")) // 2 > 1900):
                 self.store.queue(

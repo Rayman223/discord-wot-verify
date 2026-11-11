@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from discord import app_commands
 from discord.http import handle_message_parameters
 
 from wot_verify.birthday_store import BirthdayStore
@@ -162,6 +163,73 @@ async def test_daily_job_7_am_real_ping_and_restart_without_duplicates(env):
     member.edit.assert_awaited_once()
     env.channel.send.assert_awaited_once()
     assert env.service.store.decoration(1, 7)["expires_at"] == expires_at(date(2026, 11, 6))
+
+
+@pytest.mark.parametrize("locale,age", [("fr", 1), ("fr", 8), ("en", 14), ("en", 100)])
+async def test_admin_preview_is_public_repeatable_and_read_only(env, locale, age):
+    member = env.add()
+    env.bot.config = replace(env.bot.config, locale=locale, birthday_channel_id=0)
+    interaction = SimpleNamespace(
+        guild_id=1,
+        user=SimpleNamespace(id=99),
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    command = env.bot.tree.get_command("admin_birthday_preview")
+    before = list(env.bot.store.db.iterdump())
+    for _ in range(2):
+        await command.callback(interaction, years=age, member=member)
+    assert interaction.response.defer.await_args.kwargs == {"ephemeral": False}
+    assert interaction.followup.send.await_count == 2
+    sent = interaction.followup.send.await_args
+    assert sent.args[0] == "\n".join(
+        (
+            env.bot.t("birthday_preview_note"),
+            env.bot.t("birthday_heading"),
+            env.service.announcement_line(member.id, age),
+        )
+    )
+    assert sent.kwargs["ephemeral"] is False
+    assert sent.kwargs["allowed_mentions"].to_dict() == {"parse": []}
+    assert len(sent.args[0].encode("utf-16-le")) // 2 <= 2000
+    assert list(env.bot.store.db.iterdump()) == before
+    member.edit.assert_not_awaited()
+    env.bot.wg.creation_dates.assert_not_awaited()
+    env.channel.send.assert_not_awaited()
+
+
+async def test_admin_preview_defaults_and_real_announcement_do_not_interfere(env):
+    env.add()
+    interaction = SimpleNamespace(
+        guild_id=1,
+        user=SimpleNamespace(id=99),
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    command = env.bot.tree.get_command("admin_birthday_preview")
+    await command.callback(interaction)
+    assert env.service.announcement_line(99, 14) in interaction.followup.send.await_args.args[0]
+    await env.service.tick(now=NOW)
+    before = list(env.bot.store.db.iterdump())
+    await command.callback(interaction)
+    assert list(env.bot.store.db.iterdump()) == before
+    await Birthdays(env.bot).tick(now=NOW + timedelta(minutes=15))
+    env.channel.send.assert_awaited_once()
+
+
+async def test_admin_preview_permissions_server_and_age_limits(env):
+    command = env.bot.tree.get_command("admin_birthday_preview")
+    assert command.guild_only
+    assert command.default_permissions.administrator
+    interaction = SimpleNamespace(permissions=discord.Permissions.none(), guild_id=2)
+    with pytest.raises(app_commands.MissingPermissions):
+        await command.checks[0](interaction)
+    interaction.permissions = discord.Permissions(administrator=True)
+    assert command.checks[0](interaction)
+    with pytest.raises(ValueError, match="wrong_server"):
+        await command.callback(interaction)
+    years = next(p for p in command.parameters if p.name == "years")
+    assert years.min_value == 1 and years.max_value == 100
 
 
 async def test_next_day_keeps_candles_until_7_then_removes_all(env):

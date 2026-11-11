@@ -42,6 +42,18 @@ les quinze minutes. `/resync` et les changements de contact préservent les
 bougies dues ; les comparaisons de pseudo les ignorent. Le retrait du rôle joueur
 ou de la liaison déclenche aussi leur nettoyage, sans réattribuer de rôle.
 
+## Tester l’affichage à tout moment
+
+Un administrateur peut lancer `/admin_birthday_preview years:14 member:@joueur`
+dans le salon où il souhaite voir le test. `years` accepte de 1 à 100 ans
+(14 par défaut) ; `member` est facultatif et désigne l’administrateur par défaut.
+Le message est public et reprend le rendu de l’annonce avec l’âge choisi,
+même si aucun anniversaire n’est dû ou si la fonction quotidienne est désactivée.
+Il est identifié comme un test, sans ping, sans modification des pseudos ni
+écriture dans le journal des annonces. Il ne bloque donc pas la vraie annonce
+et peut être relancé même après celle-ci. Cette commande teste le message ;
+les bougies dans les pseudos restent gérées par le traitement réel.
+
 ## Données et reprise
 
 La migration automatique et idempotente `010_birthdays.sql` ajoute les dates par

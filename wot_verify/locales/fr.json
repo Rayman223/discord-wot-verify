@@ -1,4 +1,8 @@
 {
+  "command_admin_birthday_preview": "Tester publiquement le rendu d’une annonce anniversaire, sans ping ni modification des pseudos",
+  "birthday_preview_years": "Âge simulé du compte WoT (1 à 100 ans)",
+  "birthday_preview_member": "Membre affiché dans le test (vous-même par défaut)",
+  "birthday_preview_note": "🧪 Test d’affichage — âge simulé, sans notification ni modification des pseudos.",
   "birthday_heading": "Voici les anniversaires du jour ! 🎂",
   "birthday_member_one": "• {member} {candles} fête sa première année sur World of Tanks ! 🥳",
   "birthday_member": "• {member} {candles} fête ses {years} ans sur World of Tanks ! 🥳",
