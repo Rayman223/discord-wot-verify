@@ -186,6 +186,7 @@ def diagnose_report(bot, interaction):
             else channel_permissions.send_messages
         )
         check("diagnose_send_messages", can_send, "diagnose_grant_send")
+        check("diagnose_embed_links", channel_permissions.embed_links, "diagnose_grant_embed")
     report.add_field(
         name=bot.t("diagnose_nickname_hierarchy"),
         value=bot.t("diagnose_nickname_hint"),

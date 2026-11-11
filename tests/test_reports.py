@@ -269,6 +269,7 @@ def test_diagnose_missing_permissions_and_disabled_contact(env):
         "diagnose_grant_nicknames",
         "diagnose_grant_view",
         "diagnose_grant_send",
+        "diagnose_grant_embed",
     ):
         assert bot.t(key) in values(report)
 
@@ -329,3 +330,25 @@ def test_diagnose_checks_read_history_for_saved_panel(env, can_read):
     report = diagnose_report(bot, interaction)
     field = next(f for f in report.fields if f.name == bot.t("diagnose_read_history"))
     assert field.value == bot.t("diagnose_ok" if can_read else "diagnose_grant_history")
+
+
+@pytest.mark.parametrize("can_embed", [True, False])
+@pytest.mark.parametrize("thread", [True, False])
+def test_diagnose_checks_effective_embed_permission_in_profile_channel(env, can_embed, thread):
+    bot, _, _, interaction = env
+    # A server-level grant does not override a denial in the channel.
+    interaction.guild.me.guild_permissions.embed_links = True
+    permissions = discord.Permissions(
+        view_channel=True,
+        send_messages=True,
+        send_messages_in_threads=True,
+        embed_links=can_embed,
+    )
+    if thread:
+        interaction.channel = Mock(spec=discord.Thread)
+        interaction.channel.permissions_for.return_value = permissions
+    else:
+        interaction.channel.permissions_for = lambda _: permissions
+    report = diagnose_report(bot, interaction)
+    field = next(f for f in report.fields if f.name == bot.t("diagnose_embed_links"))
+    assert field.value == bot.t("diagnose_ok" if can_embed else "diagnose_grant_embed")
