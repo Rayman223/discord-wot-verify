@@ -32,7 +32,7 @@ One player confirmation is sent per link, including across restarts and retries.
 
 Claiming the clan contact role also posts a confirmation in this channel, with the clan tag, a plain-text role name and only a player mention. One message is sent per reservation; removing and reclaiming it allows another. Role assignment failures and occupied clan slots never announce success. State survives restarts, and failed delivery can be retried with the button or `/resync` while the role and reservation remain valid.
 
-Command and button replies remain private. The bot schedules deletion of public confirmations: stopping the container during those 30 seconds, or Discord denying deletion, can leave a message visible.
+Command and button replies remain private except for `/profile` and the administrator birthday preview. The bot schedules deletion of public confirmations: stopping the container during those 30 seconds, or Discord denying deletion, can leave a message visible.
 
 Callback pages offer **Return to Discord**, opening the original button's channel. The channel is included in the signed state; no Wargaming token is passed to Discord. Older valid links return to the server. If renaming is forbidden, the page confirms the link and role and explains that the member can keep their nickname without changing the server hierarchy.
 
@@ -41,6 +41,7 @@ Callback pages offer **Return to Discord**, opening the original button's channe
 | Command | Access | Effect |
 | --- | --- | --- |
 | `/status` | Member | Privately shows the member's linked account, current clan, roles and nickname state without making changes. |
+| `/profile member:@player` | Member | Publicly shows a linked player's WoT profile and clan. The optional member defaults to yourself; the target must have the player role. |
 | `/diagnose` | Administrator | Privately checks configured roles, hierarchy and bot/channel permissions. |
 | `/admin_birthday_preview years:14 member:@player` | Administrator | Really decorates the member’s nickname and publishes a simulated anniversary in the current channel without pinging or reserving a real announcement. Both arguments are optional. |
 | `/stats` | Administrator | Shows database figures, then completes the private report with live Discord/Wargaming checks. |
@@ -61,6 +62,20 @@ Administrator IDs are entered as text to avoid rounding large Discord IDs. Give 
 `/diagnose` checks **Manage Roles**, **Manage Nicknames**, the player/contact/visitor roles (existence, safety and hierarchy), and **Read Message History**, **View Channel** and **Send Messages** in the current channel, or **Send Messages in Threads** in a thread. Disabled optional roles are reported as such. It does not inspect every channel's permissions or every member's hierarchy; it explains Discord's nickname restrictions. No secrets or login links are displayed. Commands synchronize automatically at startup.
 
 A daily check refreshes links whose last successful synchronization was at least 30 days ago, including links never successfully synchronized. Failures are retried at the next check. Discord removes roles when a member leaves; on return, the bot restores the player role and requests `/resync` by DM. If DMs are closed, the command is still available in the server. Links for absent members remain until explicitly deleted.
+
+### Public player profiles
+
+`/profile` displays your profile; `/profile member:@player` selects another server member using Discord's member picker. Any member, including visitors, can look up a player. The target must have both the configured player role and a stored WoT link in this instance's region. An unlinked player's identity is never inferred from their Discord nickname. Each caller can request one profile per 30 seconds.
+
+One public embed shows the current WoT nickname and clan tag, account ID, creation date, calendar age in years/months/days, last battle and **end of last session**. The latter is Wargaming's public `logout_at`, not the start of a login session. Dates use Discord timestamps in each reader's timezone; age is calculated in UTC, with end-of-month anniversaries clamped to the last day. Missing or invalid dates and their derived age are shown as unavailable.
+
+For a clan member, the embed adds the localized rank, linked clan name, member count, clan creation date, linked commander and registered clan contact, plus the clan emblem when available. Links open the public Wargaming/WoT pages. No clan means “No clan” without clan-only details. A failed clan lookup leaves an explicitly partial profile rather than claiming there is no clan. A failed player lookup produces only a private error.
+
+The contact comes from this bot's reservation, not an arbitrary officer. No reservation means “None.” A departed member, missing roles, changed clan or ineligible rank leaves the contact's WoT link visible with a review warning. Failed checks are labelled unavailable; a saved nickname is identified as saved if the current nickname cannot be fetched. An unusable reserved identity is flagged for moderator review. Profiles never clear reservations or change roles, nicknames, links or synchronization dates.
+
+The bot acknowledges the command privately, publishes the profile in the current channel after rechecking the target's link and player role, then removes the private acknowledgement. Errors remain private. Public profiles do not expire or refresh automatically. Messages follow `LOCALE` and do not ping members or roles.
+
+After deployment, the command synchronizes at startup. No new variable or database migration is required. Grant the bot **Embed Links** as well as **View Channel** and **Send Messages** in profile channels, or **Send Messages in Threads** inside a thread. Recreate the container with the [normal Unraid update script](docs/unraid-update.md), then test your profile and another player's profile. A refused publication is reported privately.
 
 ### Clan contacts
 
@@ -105,7 +120,7 @@ These features use the existing schema and configuration. No new migration or en
 ### 1. Create the applications and channel
 
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create a **WoT Verify** application and bot. Under **Bot**, enable **Server Members Intent**; leave Message Content disabled. Copy the token directly into the server's `.env`, never into GitHub or a message.
-2. Under **Installation / OAuth2 URL Generator**, choose **Guild Install**, the `bot` and `applications.commands` scopes, and **View Channels**, **Send Messages**, **Read Message History**, **Manage Roles**, **Manage Nicknames** permissions. Invite the bot to the target server. Do not grant Administrator.
+2. Under **Installation / OAuth2 URL Generator**, choose **Guild Install**, the `bot` and `applications.commands` scopes, and **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Roles**, **Manage Nicknames** permissions. Invite the bot to the target server. Do not grant Administrator.
 3. Place the bot's highest role above the existing **player** role and every member it must rename. Discord prevents renaming the server owner and members above the bot. The player role must not be integration-managed, `@everyone` or Administrator.
 4. Enable Discord Developer Mode; copy the server ID and the existing **player** role ID into `GUILD_ID` and `ROLE_ID`.
 5. Create a **#verification** text channel visible to members who need verification. Allow the bot to view and send in it, including channel permission overrides. Run `/setup` after startup.

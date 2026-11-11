@@ -28,6 +28,7 @@ def test_persistent_view_and_commands(bot):
     assert {c.name for c in bot.tree.get_commands()} == {
         "setup",
         "status",
+        "profile",
         "diagnose",
         "resync",
         "unlink",

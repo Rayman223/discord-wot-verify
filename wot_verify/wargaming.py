@@ -2,8 +2,10 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import batched
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -13,6 +15,42 @@ CONTACT_RANKS = frozenset(
 log = logging.getLogger(__name__)
 UNKNOWN = object()
 BATCH_SIZE = 100
+
+
+def public_timestamp(value):
+    if type(value) is not int or not 0 < value <= time.time():
+        return None
+    try:
+        datetime.fromtimestamp(value, UTC)
+    except (ValueError, OverflowError, OSError):
+        return None
+    return value
+
+
+@dataclass(frozen=True)
+class PlayerProfile:
+    nickname: str
+    created_at: int | None
+    last_battle_time: int | None
+    logout_at: int | None
+
+
+@dataclass(frozen=True)
+class ProfileMembership:
+    clan_id: int
+    tag: str
+    role: str
+    rank: str | None
+
+
+@dataclass(frozen=True)
+class ClanProfile:
+    name: str
+    members_count: int | None
+    created_at: int | None
+    leader_id: int | None
+    leader_name: str | None
+    emblem: str | None
 
 
 class AccountLookup:
@@ -138,6 +176,86 @@ class Wargaming:
     async def nickname(self, account_id):
         data = await self.request("account/info", account_id=str(account_id), fields="nickname")
         return self.parse_nickname(data, account_id)
+
+    async def player_profile(self, account_id):
+        data = await self.request(
+            "account/info",
+            account_id=str(account_id),
+            fields="nickname,created_at,last_battle_time,logout_at",
+        )
+        nickname = self.parse_nickname(data, account_id)
+        account = data[str(account_id)]
+        return PlayerProfile(
+            nickname,
+            *(
+                public_timestamp(account.get(key))
+                for key in ("created_at", "last_battle_time", "logout_at")
+            ),
+        )
+
+    async def profile_membership(self, account_id, locale):
+        data = await self.request(
+            "clans/accountinfo",
+            account_id=str(account_id),
+            language=locale,
+            fields="clan.clan_id,clan.tag,role,role_i18n",
+        )
+        membership = self.parse_clan(data, account_id)
+        if membership is None:
+            return None
+        clan_id, role, tag = membership
+        rank = data[str(account_id)].get("role_i18n")
+        if not isinstance(rank, str) or not 1 <= len(rank) <= 100:
+            rank = None
+        return ProfileMembership(clan_id, tag, role, rank)
+
+    async def clan_profile(self, clan_id):
+        data = await self.request(
+            "clans/info",
+            clan_id=str(clan_id),
+            fields="name,members_count,created_at,leader_id,leader_name,emblems.x195",
+        )
+        clan = data.get(str(clan_id))
+        if not isinstance(clan, dict):
+            raise ValueError("wg_error")  # noqa: TRY004 - normalized API failure
+        name = clan.get("name")
+        if not isinstance(name, str) or not 1 <= len(name) <= 100:
+            raise ValueError("wg_error")
+        count = clan.get("members_count")
+        if type(count) is not int or not 0 <= count < 2**31:
+            count = None
+        leader_id, leader_name = clan.get("leader_id"), clan.get("leader_name")
+        if type(leader_id) is not int or not 0 < leader_id < 2**63:
+            leader_id = None
+        if not valid_nickname(leader_name):
+            leader_name = None
+        emblems = clan.get("emblems")
+        sizes = emblems.get("x195") if isinstance(emblems, dict) else None
+        emblem = sizes.get("portal") if isinstance(sizes, dict) else None
+        try:
+            url = urlsplit(emblem) if isinstance(emblem, str) else None
+            if url is not None:
+                # Accessing .port also rejects malformed or out-of-range ports.
+                _ = url.port
+            if (
+                url is None
+                or url.scheme != "https"
+                or not url.hostname
+                or url.username is not None
+                or len(emblem) > 2048
+                or any(c.isspace() for c in emblem)
+            ):
+                emblem = None
+        except ValueError:
+            emblem = None
+        return ClanProfile(
+            name,
+            count,
+            public_timestamp(clan.get("created_at")),
+            leader_id,
+            leader_name,
+            emblem,
+        )
 
     async def creation_dates(self, account_ids):
         """Read public UTC timestamps in bounded batches using the shared limiter."""

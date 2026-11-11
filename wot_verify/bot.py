@@ -16,6 +16,7 @@ from .i18n import t
 from .nicknames import without_birthday_candles, without_managed_tag
 from .notices import VerificationNotices
 from .openid import OpenID
+from .profile import register_profile_command
 from .reports import diagnose_report, status_report
 from .role_removal import request_role_removal
 from .security import States
@@ -107,6 +108,7 @@ class VerifyBot(discord.Client):
         self.runner = None
         self.register_commands()
         register_contacts_command(self)
+        register_profile_command(self)
         register_admin_commands(self)
 
     def t(self, key):
