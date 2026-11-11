@@ -42,7 +42,10 @@ def calendar_age(created, today):
 
 def account_link(region, locale, account_id, nickname):
     path = quote(f"{account_id}-{nickname}", safe="")
-    return f"[{text(nickname)}](https://worldoftanks.{region}/{locale}/community/accounts/{path}/)"
+    # WoT nicknames use only letters, digits and underscores. Escaping their underscores
+    # leaves visible backslashes in Discord's link labels; keep escaping untrusted names.
+    label = nickname if valid_nickname(nickname) else text(nickname)
+    return f"[{label}](https://worldoftanks.{region}/{locale}/community/accounts/{path}/)"
 
 
 async def profile_target(bot, discord_id):

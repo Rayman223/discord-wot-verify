@@ -130,6 +130,21 @@ async def test_visitor_can_select_another_player(env):
     assert fields[bot.t("profile_contact")] == bot.t("profile_none")
 
 
+@pytest.mark.parametrize("nickname", ["Masheik_SortLarrowZouave", "_Commander_", "Commander__WoT"])
+async def test_commander_and_contact_links_preserve_nickname_underscores(env, nickname):
+    bot, _, interaction = env
+    bot.store.reserve_contact(9, "eu", 42)
+    bot.wg.clan_profile.return_value = ClanProfile("Clan", 1, None, 400, nickname, None)
+    bot.wg.nickname.return_value = nickname
+    await execute(bot, interaction)
+    fields = values(bot, interaction.channel.send.call_args.kwargs["embed"])
+    for key, account_id in (("profile_commander", 400), ("profile_contact", 300)):
+        assert fields[bot.t(key)] == (
+            f"[{nickname}](https://worldoftanks.eu/{bot.config.locale}"
+            f"/community/accounts/{account_id}-{nickname}/)"
+        )
+
+
 @pytest.mark.parametrize(
     "state,key",
     [
@@ -373,6 +388,9 @@ async def test_external_markdown_and_mentions_are_escaped(env):
     assert "@everyone" not in str(report.to_dict())
     assert "[Clan](https://evil.test)" not in str(report.to_dict())
     assert "%2F" in account_link("eu", "fr", 400, "bad/name")
+    unsafe = account_link("eu", "fr", 400, "](@everyone)")
+    assert unsafe.startswith(r"[\]\(@")
+    assert "@everyone" not in unsafe
 
 
 @pytest.mark.parametrize(
