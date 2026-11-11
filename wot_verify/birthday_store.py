@@ -103,6 +103,13 @@ class BirthdayStore:
             (identifier,),
         ).fetchall()
 
+    def content(self, identifier, content):
+        with self.db:
+            self.db.execute(
+                "UPDATE birthday_announcements SET content=? WHERE id=? AND state='queued'",
+                (content, identifier),
+            )
+
     def destination(self, identifier, channel_id):
         with self.db:
             self.db.execute(

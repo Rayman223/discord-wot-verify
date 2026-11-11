@@ -524,16 +524,22 @@ class VerifyBot(discord.Client):
                 raise ValueError("wrong_server")
             await interaction.response.defer(ephemeral=False)
             target = member or interaction.user
-            content = "\n".join(
-                (
-                    self.t("birthday_preview_note"),
-                    self.t("birthday_heading"),
-                    self.birthdays.announcement_line(target.id, years),
+            async with self.lock:
+                external_candles, failed = await self.birthdays.preview(target.id, years)
+                content = "\n".join(
+                    (
+                        self.t("birthday_preview_note"),
+                        self.t("birthday_heading"),
+                        self.birthdays.announcement_line(
+                            target.id, years, external_candles=external_candles
+                        ),
+                    )
                 )
-            )
-            await interaction.followup.send(
-                content, ephemeral=False, allowed_mentions=discord.AllowedMentions.none()
-            )
+                if failed:
+                    content += "\n" + self.t("birthday_preview_nickname_failed")
+                await interaction.followup.send(
+                    content, ephemeral=False, allowed_mentions=discord.AllowedMentions.none()
+                )
 
         @self.tree.command(description=self.t("command_diagnose"))
         @app_commands.guild_only()
