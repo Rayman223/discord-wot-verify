@@ -104,14 +104,42 @@ class Birthdays:
         age = birthday_age(self.store.created_at(row["region"], row["account_id"]), day)
         if not age:
             return base
+        decorated = self.decorated_nickname(base, age)
+        if decorated == base:
+            self.warn("nickname_too_long", row["discord_id"], now)
+            return base
+        self.store.track(self.bot.config.guild_id, row["discord_id"], expires_at(day))
+        return decorated
+
+    @staticmethod
+    def decorated_nickname(base, age):
         decorated = f"{base} {'🕯' * age}"
         if len(decorated) > 32:
             decorated = f"{base} 🕯x{age}"
-            if len(decorated) > 32:
-                self.warn("nickname_too_long", row["discord_id"], now)
-                return base
-        self.store.track(self.bot.config.guild_id, row["discord_id"], expires_at(day))
-        return decorated
+        return decorated if len(decorated) <= 32 else base
+
+    async def preview(self, discord_id, age):
+        """Force the real nickname rendering without changing account dates/outbox.
+
+        Caller holds the bot lock. Track cleanup before Discord even if the edit
+        times out; the next normal pass restores the real birthday state.
+        """
+        member = await self.bot.member(discord_id)
+        current = member.nick or member.name
+        base = without_birthday_candles(current)
+        target = self.decorated_nickname(base, age)
+        has_candles = base != current
+        if target == base:
+            return not has_candles, False
+        now = datetime.now(UTC)
+        self.store.track(self.bot.config.guild_id, member.id, 0)
+        if target != current:
+            try:
+                await member.edit(nick=target, reason="WoT account anniversary display test")
+            except IO_ERRORS as exc:
+                self.warn(type(exc).__name__, member.id, now)
+                return not has_candles, True
+        return False, False
 
     async def cleanup(self, member, *, refresh=False):
         """Explicit role/link withdrawal also removes managed or legacy candles."""
@@ -203,7 +231,7 @@ class Birthdays:
         if age and target == base:
             # Even the compact form exceeds the limit: leave Discord untouched,
             # including any existing decoration, but still announce the birthday.
-            return row, age
+            return row, age, base == (member.nick or member.name)
         if target == base and without_birthday_candles(member.nick) != member.nick:
             # Adopt legacy decorations for cleanup; preserve identity and clan tag.
             self.store.track(guild_id, discord_id, 0)
@@ -222,19 +250,22 @@ class Birthdays:
                 self.store.created_at(row["region"], row["account_id"]), local.date()
             )
             if age:
-                return row, age
+                return row, age, not cleaned and base == (member.nick or member.name)
         return None
 
-    def announcement_line(self, discord_id, age):
+    def announcement_line(self, discord_id, age, *, external_candles=False):
         return self.bot.t("birthday_member_one" if age == 1 else "birthday_member").format(
-            member=f"<@{discord_id}>", candles="🕯" * age, years=age
+            member=f"<@{discord_id}>",
+            candles=" " + "🕯" * age if external_candles else "",
+            years=age,
         )
 
     def queue(self, celebrants, day, now):
         guild_id = self.bot.config.guild_id
         heading = self.bot.t("birthday_heading")
         content, rows = heading, []
-        for row, age in celebrants:
+        budget = len(heading.encode("utf-16-le")) // 2
+        for row, age, external_candles in celebrants:
             current = self.bot.store.get(row["discord_id"])
             if current is None or (current["region"], current["account_id"]) != (
                 row["region"],
@@ -245,9 +276,13 @@ class Birthdays:
                 continue
             if self.store.reserved(guild_id, day.isoformat(), row):
                 continue
-            line = self.announcement_line(row["discord_id"], age)
+            line = self.announcement_line(row["discord_id"], age, external_candles=external_candles)
+            # A queued announcement may be retried after nicknames change. Leave
+            # enough room to render external candles for every member if needed.
+            maximum_line = self.announcement_line(row["discord_id"], age, external_candles=True)
+            line_budget = 1 + len(maximum_line.encode("utf-16-le")) // 2
             # Keep room below Discord's 2000-character limit, also for astral emoji.
-            if rows and (len((content + "\n" + line).encode("utf-16-le")) // 2 > 1900):
+            if rows and budget + line_budget > 1900:
                 self.store.queue(
                     guild_id,
                     self.bot.config.birthday_channel_id,
@@ -257,7 +292,9 @@ class Birthdays:
                     int(now.timestamp()),
                 )
                 content, rows = heading, []
+                budget = len(heading.encode("utf-16-le")) // 2
             content += "\n" + line
+            budget += line_budget
             rows.append(row)
         if rows:
             self.store.queue(
@@ -352,6 +389,24 @@ class Birthdays:
                         # members can cross midnight. Recheck just before posting.
                         self.store.state(pending["id"], "cancelled")
                         continue
+                    # Only refresh messages that have never had an uncertain
+                    # delivery. Persist exactly what will be sent for recovery.
+                    lines = [self.bot.t("birthday_heading")]
+                    for saved, member in zip(members, eligible, strict=True):
+                        age = birthday_age(
+                            self.store.created_at(saved["region"], saved["account_id"]),
+                            local.date(),
+                        )
+                        nickname = member.nick or member.name
+                        lines.append(
+                            self.announcement_line(
+                                member.id,
+                                age,
+                                external_candles=without_birthday_candles(nickname) == nickname,
+                            )
+                        )
+                    pending["content"] = "\n".join(lines)
+                    self.store.content(pending["id"], pending["content"])
                     self.store.state(pending["id"], "sending", now=int(now.timestamp()))
                     try:
                         async with asyncio.timeout(20):
@@ -375,6 +430,7 @@ class Birthdays:
                 self.warn("announcement_" + type(exc).__name__, pending["channel_id"], now)
 
     async def still_eligible(self, members):
+        eligible = []
         for saved in members:
             row = self.bot.store.get(saved["discord_id"])
             if row is None or (row["region"], row["account_id"]) != (
@@ -388,4 +444,5 @@ class Birthdays:
                 return False
             if not any(r.id == self.bot.config.role_id for r in member.roles):
                 return False
-        return True
+            eligible.append(member)
+        return eligible

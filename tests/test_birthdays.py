@@ -147,7 +147,8 @@ async def test_daily_job_7_am_real_ping_and_restart_without_duplicates(env):
     env.channel.send.assert_not_awaited()
     await env.service.tick(now=NOW)
     assert member.nick == "Player [TAG] " + "🕯" * 14
-    assert "<@7> " + "🕯" * 14 in env.posted[0].content
+    assert "<@7> fête" in env.posted[0].content
+    assert "🕯" not in env.posted[0].content
     assert "14 ans" in env.posted[0].content
     mentions = env.channel.send.await_args.kwargs["allowed_mentions"].to_dict()
     assert mentions["users"] == [7] and mentions["parse"] == []
@@ -166,7 +167,7 @@ async def test_daily_job_7_am_real_ping_and_restart_without_duplicates(env):
 
 
 @pytest.mark.parametrize("locale,age", [("fr", 1), ("fr", 8), ("en", 14), ("en", 100)])
-async def test_admin_preview_is_public_repeatable_and_read_only(env, locale, age):
+async def test_admin_preview_really_renames_without_changing_dates_or_outbox(env, locale, age):
     member = env.add()
     env.bot.config = replace(env.bot.config, locale=locale, birthday_channel_id=0)
     interaction = SimpleNamespace(
@@ -176,7 +177,8 @@ async def test_admin_preview_is_public_repeatable_and_read_only(env, locale, age
         followup=SimpleNamespace(send=AsyncMock()),
     )
     command = env.bot.tree.get_command("admin_birthday_preview")
-    before = list(env.bot.store.db.iterdump())
+    tables = ("links", "account_birthdays", "birthday_announcements", "birthday_celebrants")
+    before = {table: list(env.bot.store.db.execute(f"SELECT * FROM {table}")) for table in tables}
     for _ in range(2):
         await command.callback(interaction, years=age, member=member)
     assert interaction.response.defer.await_args.kwargs == {"ephemeral": False}
@@ -192,14 +194,19 @@ async def test_admin_preview_is_public_repeatable_and_read_only(env, locale, age
     assert sent.kwargs["ephemeral"] is False
     assert sent.kwargs["allowed_mentions"].to_dict() == {"parse": []}
     assert len(sent.args[0].encode("utf-16-le")) // 2 <= 2000
-    assert list(env.bot.store.db.iterdump()) == before
-    member.edit.assert_not_awaited()
+    assert {
+        table: list(env.bot.store.db.execute(f"SELECT * FROM {table}")) for table in tables
+    } == before
+    assert member.nick == env.service.decorated_nickname("Player [TAG]", age)
+    member.edit.assert_awaited_once()
+    assert env.service.store.decoration(1, member.id) is not None
     env.bot.wg.creation_dates.assert_not_awaited()
     env.channel.send.assert_not_awaited()
 
 
 async def test_admin_preview_defaults_and_real_announcement_do_not_interfere(env):
     env.add()
+    env.add(99)
     interaction = SimpleNamespace(
         guild_id=1,
         user=SimpleNamespace(id=99),
@@ -210,9 +217,9 @@ async def test_admin_preview_defaults_and_real_announcement_do_not_interfere(env
     await command.callback(interaction)
     assert env.service.announcement_line(99, 14) in interaction.followup.send.await_args.args[0]
     await env.service.tick(now=NOW)
-    before = list(env.bot.store.db.iterdump())
+    before = list(env.bot.store.db.execute("SELECT * FROM birthday_announcements"))
     await command.callback(interaction)
-    assert list(env.bot.store.db.iterdump()) == before
+    assert list(env.bot.store.db.execute("SELECT * FROM birthday_announcements")) == before
     await Birthdays(env.bot).tick(now=NOW + timedelta(minutes=15))
     env.channel.send.assert_awaited_once()
 
@@ -230,6 +237,71 @@ async def test_admin_preview_permissions_server_and_age_limits(env):
         await command.callback(interaction)
     years = next(p for p in command.parameters if p.name == "years")
     assert years.min_value == 1 and years.max_value == 100
+
+
+@pytest.mark.parametrize("length,external", [(17, False), (27, False), (28, True), (32, True)])
+async def test_announcement_candles_only_when_nickname_has_none(env, length, external):
+    member = env.add(nickname="P" * length)
+    await env.service.tick(now=NOW)
+    assert ("🕯" in env.posted[0].content) is external
+    if external:
+        member.edit.assert_not_awaited()
+        assert "🕯" * 14 in env.posted[0].content
+    else:
+        assert "🕯" in member.nick
+
+
+async def test_queued_announcement_refreshes_candles_after_nickname_recovery(env):
+    member = env.add()
+    member.edit.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason=""), "")
+    env.channel.permissions_for.return_value.send_messages = False
+    await env.service.tick(now=NOW)
+    assert "🕯" in env.service.store.pending(1)[0]["content"]
+    # Simulate a successful rename after permissions/hierarchy were corrected,
+    # before retrying the still-queued announcement.
+    member.nick = "Player [TAG] " + "🕯" * 14
+    env.channel.permissions_for.return_value.send_messages = True
+    await env.service.tick(now=NOW + timedelta(minutes=1))
+    assert "🕯" not in env.posted[0].content
+    saved = env.bot.store.db.execute("SELECT content FROM birthday_announcements").fetchone()[0]
+    assert saved == env.posted[0].content
+
+
+@pytest.mark.parametrize("length", [17, 27, 28])
+@pytest.mark.parametrize("before_seven", [False, True])
+async def test_preview_uses_real_nickname_fallback_and_forces_non_birthday(
+    env, monkeypatch, length, before_seven
+):
+    now = NOW - timedelta(hours=1) if before_seven else NOW
+    freeze_calendar(monkeypatch, now=now)
+    base = "P" * length
+    member = env.add(nickname=base, created=int(utc("2012-11-04T12:00:00").timestamp()))
+    external, failed = await env.service.preview(7, 14)
+    assert not failed
+    assert external is (length > 27)
+    assert member.nick == env.service.decorated_nickname(base, 14)
+    # Restarted normal processing restores the real date's state, including the
+    # pending cleanup when a preview was interrupted after the Discord edit.
+    await Birthdays(env.bot).tick(now=now)
+    assert member.nick == base
+    assert env.service.store.decoration(1, 7) is None
+    env.channel.send.assert_not_awaited()
+
+
+async def test_preview_reports_failed_rename_and_still_publishes_candles(env):
+    member = env.add()
+    member.edit.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason=""), "SECRET")
+    interaction = SimpleNamespace(
+        guild_id=1,
+        user=member,
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    await env.bot.tree.get_command("admin_birthday_preview").callback(interaction, years=14)
+    text = interaction.followup.send.await_args.args[0]
+    assert "🕯" * 14 in text
+    assert env.bot.t("birthday_preview_nickname_failed") in text
+    assert "SECRET" not in text
 
 
 async def test_next_day_keeps_candles_until_7_then_removes_all(env):
@@ -775,7 +847,7 @@ async def test_midnight_during_delivery_never_pings_yesterdays_birthdays(
             return clock[0].astimezone(tz or UTC)
 
     monkeypatch.setattr("wot_verify.birthdays.datetime", Clock)
-    env.service.queue([(env.bot.store.get(7), 14)], late.astimezone(BRUSSELS).date(), late)
+    env.service.queue([(env.bot.store.get(7), 14, False)], late.astimezone(BRUSSELS).date(), late)
     if delayed_stage == "channel":
         original = env.service.channel
 

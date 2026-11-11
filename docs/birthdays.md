@@ -27,7 +27,13 @@ Dans le salon configuré, l'annonce regroupe les anniversaires et mentionne
 réellement les membres concernés, par exemple :
 
 > Voici les anniversaires du jour ! 🎂
-> • @joueur 🕯🕯 fête ses 2 ans sur World of Tanks ! 🥳
+> • @joueur fête ses 2 ans sur World of Tanks ! 🥳
+
+La mention affiche le pseudo Discord décoré. Le message n’ajoute donc pas de
+bougies après la mention si le pseudo en contient déjà, y compris en forme
+compacte. Si le pseudo reste sans bougies (longueur excessive ou renommage
+refusé), elles apparaissent dans le texte après la mention. Une annonce en
+attente réexamine le pseudo au moment de l’envoi pour éviter les doublons.
 
 Les annonces suivent `LOCALE` (`fr` ou `en`), restent dans le salon et sont
 réparties en plusieurs messages si nécessaire. Aucun message n'est envoyé les
@@ -49,10 +55,20 @@ dans le salon où il souhaite voir le test. `years` accepte de 1 à 100 ans
 (14 par défaut) ; `member` est facultatif et désigne l’administrateur par défaut.
 Le message est public et reprend le rendu de l’annonce avec l’âge choisi,
 même si aucun anniversaire n’est dû ou si la fonction quotidienne est désactivée.
-Il est identifié comme un test, sans ping, sans modification des pseudos ni
-écriture dans le journal des annonces. Il ne bloque donc pas la vraie annonce
-et peut être relancé même après celle-ci. Cette commande teste le message ;
-les bougies dans les pseudos restent gérées par le traitement réel.
+Le test **modifie réellement le pseudo** du membre avec l’âge simulé, en utilisant
+les mêmes bougies et le même repli compact que le traitement quotidien. Si les
+deux formes dépassent 32 caractères, le pseudo reste inchangé et les bougies
+apparaissent dans l’annonce. Un refus Discord est signalé sans bloquer le message.
+Le message est identifié comme un test, sans ping. Les dates WG et le journal
+anti-doublon des annonces réelles ne sont pas modifiés ; le test peut être relancé.
+
+Le nettoyage du pseudo est enregistré avant le renommage, pour survivre à un
+redémarrage. Au prochain passage normal (dans les quinze minutes lorsque la
+fonction est active), le pseudo retrouve les bougies correspondant à la vraie
+date, ou perd celles du test si aucun anniversaire n’est dû. Si la fonction
+quotidienne est désactivée, ce nettoyage attend sa réactivation. La commande
+ne modifie ni les rôles ni la liaison WoT et fonctionne aussi sur un membre
+sans liaison, avec les droits et la hiérarchie Discord habituels.
 
 ## Données et reprise
 
