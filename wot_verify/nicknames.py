@@ -2,7 +2,7 @@
 
 import re
 
-_CANDLES = re.compile("🕯[\ufe0e\ufe0f]?")
+_CANDLES = re.compile("🕯[\ufe0e\ufe0f]?(?:x[1-9][0-9]*(?![0-9A-Za-z_]))?")
 
 
 def without_birthday_candles(nickname):

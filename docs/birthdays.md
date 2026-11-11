@@ -17,8 +17,10 @@ Seuls les membres présents, liés en base et ayant le rôle joueur sont céléb
 à partir du premier anniversaire. Le pseudo devient `PseudoWG [TAG] 🕯…`, avec
 une bougie par année révolue et sans `[TAG]` pour les non-contacts. Les bougies
 existantes sont remplacées, pas cumulées. L'identité et le tag ne sont jamais
-tronqués : si l'ensemble dépasse 32 caractères, le pseudo garde son identité
-sans bougies et un avertissement `nickname_too_long` indique l'ID Discord.
+tronqués : si l'ensemble dépasse 32 caractères, le bot essaie la forme compacte
+`PseudoWG [TAG] 🕯x14` pour un compte de 14 ans. Si cette forme dépasse encore
+32 caractères, le traitement anniversaire laisse le pseudo inchangé et un
+avertissement `nickname_too_long` indique l'ID Discord.
 L'annonce reste publiée même si Discord refuse le renommage.
 
 Dans le salon configuré, l'annonce regroupe les anniversaires et mentionne
@@ -39,6 +41,18 @@ Les nouveaux membres validés et les erreurs individuelles sont réexaminés dan
 les quinze minutes. `/resync` et les changements de contact préservent les
 bougies dues ; les comparaisons de pseudo les ignorent. Le retrait du rôle joueur
 ou de la liaison déclenche aussi leur nettoyage, sans réattribuer de rôle.
+
+## Tester l’affichage à tout moment
+
+Un administrateur peut lancer `/admin_birthday_preview years:14 member:@joueur`
+dans le salon où il souhaite voir le test. `years` accepte de 1 à 100 ans
+(14 par défaut) ; `member` est facultatif et désigne l’administrateur par défaut.
+Le message est public et reprend le rendu de l’annonce avec l’âge choisi,
+même si aucun anniversaire n’est dû ou si la fonction quotidienne est désactivée.
+Il est identifié comme un test, sans ping, sans modification des pseudos ni
+écriture dans le journal des annonces. Il ne bloque donc pas la vraie annonce
+et peut être relancé même après celle-ci. Cette commande teste le message ;
+les bougies dans les pseudos restent gérées par le traitement réel.
 
 ## Données et reprise
 

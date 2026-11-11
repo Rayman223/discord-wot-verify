@@ -36,6 +36,7 @@ def test_persistent_view_and_commands(bot):
         "contacts",
         "stats",
         "admin_import_players",
+        "admin_birthday_preview",
     }
 
 

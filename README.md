@@ -42,6 +42,7 @@ Callback pages offer **Return to Discord**, opening the original button's channe
 | --- | --- | --- |
 | `/status` | Member | Privately shows the member's linked account, current clan, roles and nickname state without making changes. |
 | `/diagnose` | Administrator | Privately checks configured roles, hierarchy and bot/channel permissions. |
+| `/admin_birthday_preview years:14 member:@player` | Administrator | Publishes a simulated anniversary in the current channel, without pinging, changing nicknames or reserving a real announcement. Both arguments are optional. |
 | `/stats` | Administrator | Shows database figures, then completes the private report with live Discord/Wargaming checks. |
 | `/admin_import_players` | Administrator | Previews importing existing player and clan contact roles without changing anything. |
 | `/admin_import_players confirm:True` | Administrator | Rechecks and imports eligible identities and clan reservations, then removes leftover visitor roles. |

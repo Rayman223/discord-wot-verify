@@ -1,4 +1,8 @@
 {
+  "command_admin_birthday_preview": "Test an account anniversary announcement publicly, without pinging or changing nicknames",
+  "birthday_preview_years": "Simulated WoT account age (1 to 100 years)",
+  "birthday_preview_member": "Member displayed in the test (yourself by default)",
+  "birthday_preview_note": "🧪 Display test — simulated age, without notifications or nickname changes.",
   "birthday_heading": "Here are today's account anniversaries! 🎂",
   "birthday_member_one": "• {member} {candles} celebrates {years} year on World of Tanks! 🥳",
   "birthday_member": "• {member} {candles} celebrates {years} years on World of Tanks! 🥳",

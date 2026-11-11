@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from discord import app_commands
 from discord.http import handle_message_parameters
 
 from wot_verify.birthday_store import BirthdayStore
@@ -164,6 +165,73 @@ async def test_daily_job_7_am_real_ping_and_restart_without_duplicates(env):
     assert env.service.store.decoration(1, 7)["expires_at"] == expires_at(date(2026, 11, 6))
 
 
+@pytest.mark.parametrize("locale,age", [("fr", 1), ("fr", 8), ("en", 14), ("en", 100)])
+async def test_admin_preview_is_public_repeatable_and_read_only(env, locale, age):
+    member = env.add()
+    env.bot.config = replace(env.bot.config, locale=locale, birthday_channel_id=0)
+    interaction = SimpleNamespace(
+        guild_id=1,
+        user=SimpleNamespace(id=99),
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    command = env.bot.tree.get_command("admin_birthday_preview")
+    before = list(env.bot.store.db.iterdump())
+    for _ in range(2):
+        await command.callback(interaction, years=age, member=member)
+    assert interaction.response.defer.await_args.kwargs == {"ephemeral": False}
+    assert interaction.followup.send.await_count == 2
+    sent = interaction.followup.send.await_args
+    assert sent.args[0] == "\n".join(
+        (
+            env.bot.t("birthday_preview_note"),
+            env.bot.t("birthday_heading"),
+            env.service.announcement_line(member.id, age),
+        )
+    )
+    assert sent.kwargs["ephemeral"] is False
+    assert sent.kwargs["allowed_mentions"].to_dict() == {"parse": []}
+    assert len(sent.args[0].encode("utf-16-le")) // 2 <= 2000
+    assert list(env.bot.store.db.iterdump()) == before
+    member.edit.assert_not_awaited()
+    env.bot.wg.creation_dates.assert_not_awaited()
+    env.channel.send.assert_not_awaited()
+
+
+async def test_admin_preview_defaults_and_real_announcement_do_not_interfere(env):
+    env.add()
+    interaction = SimpleNamespace(
+        guild_id=1,
+        user=SimpleNamespace(id=99),
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    command = env.bot.tree.get_command("admin_birthday_preview")
+    await command.callback(interaction)
+    assert env.service.announcement_line(99, 14) in interaction.followup.send.await_args.args[0]
+    await env.service.tick(now=NOW)
+    before = list(env.bot.store.db.iterdump())
+    await command.callback(interaction)
+    assert list(env.bot.store.db.iterdump()) == before
+    await Birthdays(env.bot).tick(now=NOW + timedelta(minutes=15))
+    env.channel.send.assert_awaited_once()
+
+
+async def test_admin_preview_permissions_server_and_age_limits(env):
+    command = env.bot.tree.get_command("admin_birthday_preview")
+    assert command.guild_only
+    assert command.default_permissions.administrator
+    interaction = SimpleNamespace(permissions=discord.Permissions.none(), guild_id=2)
+    with pytest.raises(app_commands.MissingPermissions):
+        await command.checks[0](interaction)
+    interaction.permissions = discord.Permissions(administrator=True)
+    assert command.checks[0](interaction)
+    with pytest.raises(ValueError, match="wrong_server"):
+        await command.callback(interaction)
+    years = next(p for p in command.parameters if p.name == "years")
+    assert years.min_value == 1 and years.max_value == 100
+
+
 async def test_next_day_keeps_candles_until_7_then_removes_all(env):
     member = env.add(nickname="🕯Player 🕯️[TAG]🕯︎")
     await env.service.tick(now=NOW)
@@ -209,21 +277,61 @@ async def test_no_missed_day_announcements_unknown_future_or_non_players(env):
 
 
 async def test_overlong_nickname_preserves_identity_but_announces(env, caplog):
-    member = env.add(nickname="PlayerWithLongName [TAG] 🕯🕯")
+    original = "P" * 28 + " 🕯🕯"
+    member = env.add(nickname=original)
     await env.service.tick(now=NOW)
-    assert member.nick == "PlayerWithLongName [TAG]"
+    assert member.nick == original
+    member.edit.assert_not_awaited()
     assert "nickname_too_long" in caplog.text and "7" in caplog.text
     env.channel.send.assert_awaited_once()
 
 
-@pytest.mark.parametrize("length", [16, 17, 18])
+@pytest.mark.parametrize("length", [16, 17, 18, 27, 28, 32])
 async def test_nickname_limit_never_truncates_identity_or_candle_count(env, length):
     base = "P" * length
     member = env.add(nickname=base)
     await env.service.tick(now=NOW)
-    expected = base + " " + "🕯" * 14 if length <= 17 else base
+    expected = base + " " + "🕯" * 14 if length <= 17 else base + " 🕯x14"
+    if length > 27:
+        expected = base
     assert member.nick == expected
     assert len(member.nick) <= 32
+    env.channel.send.assert_awaited_once()
+
+
+@pytest.mark.parametrize("age", [8, 10, 14, 25])
+async def test_compact_candles_use_actual_age_and_are_cleaned_next_day(env, age):
+    created = int(utc(f"{NOW.year - age}-11-06T12:00:00").timestamp())
+    base = "PlayerWithLongNameXX [TAG]"
+    member = env.add(nickname=base, created=created)
+    await env.service.tick(now=NOW)
+    assert member.nick == f"{base} 🕯x{age}"
+    assert f"{age} ans" in env.posted[0].content
+    await Birthdays(env.bot).tick(now=NOW + timedelta(minutes=15))
+    env.channel.send.assert_awaited_once()
+    assert member.nick == f"{base} 🕯x{age}"
+    await env.service.tick(now=NOW + timedelta(days=1))
+    assert member.nick == base
+
+
+async def test_sync_preserves_compact_candles_and_cleans_them_on_role_removal(env, monkeypatch):
+    freeze_calendar(monkeypatch)
+    base = "PlayerWithLongName [TAG]"
+    member = env.add(nickname=base)
+    env.bot.wg.nickname.return_value = "PlayerWithLongName"
+    env.bot.store.reserve_contact(7, "eu", 42)
+    env.bot.store.remember_tag(7, " [TAG]")
+    env.bot.role = lambda _: SimpleNamespace(id=2)
+    env.bot.contact_role = lambda _: SimpleNamespace(id=3)
+    member.roles.append(SimpleNamespace(id=3))
+    await env.service.tick(now=NOW)
+    assert member.nick == base + " 🕯x14"
+    async with env.bot.lock:
+        await env.bot.sync(env.bot.store.get(7))
+    assert member.nick == base + " 🕯x14"
+    member.roles = []
+    await env.service.tick(now=NOW + timedelta(minutes=15))
+    assert member.nick == base
 
 
 async def test_discord_refusal_does_not_stop_others_or_announcement(env):
