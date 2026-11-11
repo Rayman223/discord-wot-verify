@@ -209,21 +209,61 @@ async def test_no_missed_day_announcements_unknown_future_or_non_players(env):
 
 
 async def test_overlong_nickname_preserves_identity_but_announces(env, caplog):
-    member = env.add(nickname="PlayerWithLongName [TAG] 🕯🕯")
+    original = "P" * 28 + " 🕯🕯"
+    member = env.add(nickname=original)
     await env.service.tick(now=NOW)
-    assert member.nick == "PlayerWithLongName [TAG]"
+    assert member.nick == original
+    member.edit.assert_not_awaited()
     assert "nickname_too_long" in caplog.text and "7" in caplog.text
     env.channel.send.assert_awaited_once()
 
 
-@pytest.mark.parametrize("length", [16, 17, 18])
+@pytest.mark.parametrize("length", [16, 17, 18, 27, 28, 32])
 async def test_nickname_limit_never_truncates_identity_or_candle_count(env, length):
     base = "P" * length
     member = env.add(nickname=base)
     await env.service.tick(now=NOW)
-    expected = base + " " + "🕯" * 14 if length <= 17 else base
+    expected = base + " " + "🕯" * 14 if length <= 17 else base + " 🕯x14"
+    if length > 27:
+        expected = base
     assert member.nick == expected
     assert len(member.nick) <= 32
+    env.channel.send.assert_awaited_once()
+
+
+@pytest.mark.parametrize("age", [8, 10, 14, 25])
+async def test_compact_candles_use_actual_age_and_are_cleaned_next_day(env, age):
+    created = int(utc(f"{NOW.year - age}-11-06T12:00:00").timestamp())
+    base = "PlayerWithLongNameXX [TAG]"
+    member = env.add(nickname=base, created=created)
+    await env.service.tick(now=NOW)
+    assert member.nick == f"{base} 🕯x{age}"
+    assert f"{age} ans" in env.posted[0].content
+    await Birthdays(env.bot).tick(now=NOW + timedelta(minutes=15))
+    env.channel.send.assert_awaited_once()
+    assert member.nick == f"{base} 🕯x{age}"
+    await env.service.tick(now=NOW + timedelta(days=1))
+    assert member.nick == base
+
+
+async def test_sync_preserves_compact_candles_and_cleans_them_on_role_removal(env, monkeypatch):
+    freeze_calendar(monkeypatch)
+    base = "PlayerWithLongName [TAG]"
+    member = env.add(nickname=base)
+    env.bot.wg.nickname.return_value = "PlayerWithLongName"
+    env.bot.store.reserve_contact(7, "eu", 42)
+    env.bot.store.remember_tag(7, " [TAG]")
+    env.bot.role = lambda _: SimpleNamespace(id=2)
+    env.bot.contact_role = lambda _: SimpleNamespace(id=3)
+    member.roles.append(SimpleNamespace(id=3))
+    await env.service.tick(now=NOW)
+    assert member.nick == base + " 🕯x14"
+    async with env.bot.lock:
+        await env.bot.sync(env.bot.store.get(7))
+    assert member.nick == base + " 🕯x14"
+    member.roles = []
+    await env.service.tick(now=NOW + timedelta(minutes=15))
+    assert member.nick == base
 
 
 async def test_discord_refusal_does_not_stop_others_or_announcement(env):

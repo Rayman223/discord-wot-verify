@@ -17,8 +17,10 @@ Seuls les membres présents, liés en base et ayant le rôle joueur sont céléb
 à partir du premier anniversaire. Le pseudo devient `PseudoWG [TAG] 🕯…`, avec
 une bougie par année révolue et sans `[TAG]` pour les non-contacts. Les bougies
 existantes sont remplacées, pas cumulées. L'identité et le tag ne sont jamais
-tronqués : si l'ensemble dépasse 32 caractères, le pseudo garde son identité
-sans bougies et un avertissement `nickname_too_long` indique l'ID Discord.
+tronqués : si l'ensemble dépasse 32 caractères, le bot essaie la forme compacte
+`PseudoWG [TAG] 🕯x14` pour un compte de 14 ans. Si cette forme dépasse encore
+32 caractères, le traitement anniversaire laisse le pseudo inchangé et un
+avertissement `nickname_too_long` indique l'ID Discord.
 L'annonce reste publiée même si Discord refuse le renommage.
 
 Dans le salon configuré, l'annonce regroupe les anniversaires et mentionne

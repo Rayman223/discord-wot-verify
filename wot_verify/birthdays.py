@@ -106,8 +106,10 @@ class Birthdays:
             return base
         decorated = f"{base} {'🕯' * age}"
         if len(decorated) > 32:
-            self.warn("nickname_too_long", row["discord_id"], now)
-            return base
+            decorated = f"{base} 🕯x{age}"
+            if len(decorated) > 32:
+                self.warn("nickname_too_long", row["discord_id"], now)
+                return base
         self.store.track(self.bot.config.guild_id, row["discord_id"], expires_at(day))
         return decorated
 
@@ -197,6 +199,11 @@ class Birthdays:
             return None
         base = without_birthday_candles(member.nick or member.name)
         target = self.prepare_nickname(row, base, current=member.nick, now=now)
+        age = birthday_age(self.store.created_at(row["region"], row["account_id"]), local.date())
+        if age and target == base:
+            # Even the compact form exceeds the limit: leave Discord untouched,
+            # including any existing decoration, but still announce the birthday.
+            return row, age
         if target == base and without_birthday_candles(member.nick) != member.nick:
             # Adopt legacy decorations for cleanup; preserve identity and clan tag.
             self.store.track(guild_id, discord_id, 0)
