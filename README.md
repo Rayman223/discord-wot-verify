@@ -59,7 +59,7 @@ Administrator IDs are entered as text to avoid rounding large Discord IDs. Give 
 
 `/status` only inspects the invoking member's account, with one request per 30 seconds. Stored nicknames and the last successful synchronization are distinguished from current Wargaming data. A Wargaming outage means unavailable information, never “no clan.” Discrepancies suggest `/resync` or moderator review; no correction is automatic.
 
-`/diagnose` checks **Manage Roles**, **Manage Nicknames**, the player/contact/visitor roles (existence, safety and hierarchy), and **Read Message History**, **View Channel** and **Send Messages** in the current channel, or **Send Messages in Threads** in a thread. Disabled optional roles are reported as such. It does not inspect every channel's permissions or every member's hierarchy; it explains Discord's nickname restrictions. No secrets or login links are displayed. Commands synchronize automatically at startup.
+`/diagnose` checks **Manage Roles**, **Manage Nicknames**, the player/contact/visitor roles (existence, safety and hierarchy), and **Read Message History**, **Embed Links**, **View Channel** and **Send Messages** in the current channel, or **Send Messages in Threads** in a thread. Disabled optional roles are reported as such. It does not inspect every channel's permissions or every member's hierarchy; it explains Discord's nickname restrictions. No secrets or login links are displayed. Commands synchronize automatically at startup.
 
 A daily check refreshes links whose last successful synchronization was at least 30 days ago, including links never successfully synchronized. Failures are retried at the next check. Discord removes roles when a member leaves; on return, the bot restores the player role and requests `/resync` by DM. If DMs are closed, the command is still available in the server. Links for absent members remain until explicitly deleted.
 
@@ -76,6 +76,8 @@ The contact comes from this bot's reservation, not an arbitrary officer. No rese
 The bot acknowledges the command privately, publishes the profile in the current channel after rechecking the target's link and player role, then removes the private acknowledgement. Errors remain private. Public profiles do not expire or refresh automatically. Messages follow `LOCALE` and do not ping members or roles.
 
 After deployment, the command synchronizes at startup. No new variable or database migration is required. Grant the bot **Embed Links** as well as **View Channel** and **Send Messages** in profile channels, or **Send Messages in Threads** inside a thread. Recreate the container with the [normal Unraid update script](docs/unraid-update.md), then test your profile and another player's profile. A refused publication is reported privately.
+
+If Discord refuses publication, run `/diagnose` in the same channel and fix any missing permissions there, including channel/category overrides. The bot logs the publication failure's HTTP status and Discord error code without response bodies or tokens.
 
 ### Clan contacts
 

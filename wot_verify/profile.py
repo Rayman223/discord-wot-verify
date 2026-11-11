@@ -192,9 +192,17 @@ def register_profile_command(bot):
             current = await profile_target(bot, target.id)
             if (current["region"], current["account_id"]) != (row["region"], row["account_id"]):
                 raise ValueError("profile_changed")
-            await interaction.channel.send(
-                embed=report, allowed_mentions=discord.AllowedMentions.none()
-            )
+            try:
+                await interaction.channel.send(
+                    embed=report, allowed_mentions=discord.AllowedMentions.none()
+                )
+            except discord.Forbidden as exc:
+                # Status/code identify Discord failures without logging response bodies or tokens.
+                log.warning("Profile publication failed: status=%s code=%s", exc.status, exc.code)
+                raise ValueError("profile_publish_forbidden") from None
+            except discord.HTTPException as exc:
+                log.warning("Profile publication failed: status=%s code=%s", exc.status, exc.code)
+                raise
         try:
             await interaction.delete_original_response()
         except (discord.HTTPException, aiohttp.ClientError, OSError):

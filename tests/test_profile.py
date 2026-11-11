@@ -313,12 +313,31 @@ async def test_change_during_lookup_prevents_publication(env, change):
     assert interaction.followup.send.call_args.kwargs["ephemeral"] is True
 
 
-async def test_publication_failure_is_private(env):
+@pytest.mark.parametrize("status,code", [(403, 50013), (400, 50035)])
+async def test_publication_failure_is_private_and_logged_without_response_body(
+    env, caplog, status, code
+):
     bot, _, interaction = env
-    interaction.channel.send.side_effect = discord.Forbidden(Mock(status=403), "failure")
+    cls = discord.Forbidden if status == 403 else discord.HTTPException
+    interaction.channel.send.side_effect = cls(
+        Mock(status=status), {"code": code, "message": "PRIVATE_TOKEN PRIVATE_APP"}
+    )
     await execute(bot, interaction)
-    interaction.followup.send.assert_awaited_once_with(bot.t("discord_error"), ephemeral=True)
+    key = "profile_publish_forbidden" if status == 403 else "discord_error"
+    interaction.followup.send.assert_awaited_once_with(bot.t(key), ephemeral=True)
+    interaction.channel.send.assert_awaited_once()
     interaction.delete_original_response.assert_not_awaited()
+    assert f"Profile publication failed: status={status} code={code}" in caplog.text
+    assert "PRIVATE_" not in caplog.text
+
+
+async def test_member_lookup_failure_does_not_report_publication_permissions(env):
+    bot, _, interaction = env
+    bot.member.side_effect = discord.Forbidden(Mock(status=403), "failure")
+    await execute(bot, interaction)
+    interaction.channel.send.assert_not_awaited()
+    bot.wg.player_profile.assert_not_awaited()
+    interaction.followup.send.assert_awaited_once_with(bot.t("discord_error"), ephemeral=True)
 
 
 async def test_acknowledgement_cleanup_failure_does_not_report_publication_failure(env):
